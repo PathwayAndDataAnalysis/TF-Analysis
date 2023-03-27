@@ -18,11 +18,19 @@ def main():
 
     de = pd.read_csv('../data/differential-exp.tsv', sep='\t')
 
-    # Match targetSymbol column of cp to Symbols column of de
-    temp = cp[cp['targetSymbol'].isin(de['Symbols'])]
-    # reset index
-    temp = temp.reset_index(drop=True)
+    # Create a new column named updown based on positive
+    # and negative values of SignedP column of de dataframe
+    de['updown'] = np.where(de['SignedP'] > 0, '1', '-1')
 
+    # Sort SignedP column in ascending order if updown column is 1
+    # and sort absolute values of SignedP column in ascending order if updown column is -1
+    de = de.sort_values(by=['updown', 'SignedP'], ascending=[False, True])
+
+    # Add new column named rank to de dataframe
+    de['rank'] = np.arange(len(de))
+
+    # Add reverse_rank column to de dataframe
+    de['reverse_rank'] = de['rank'].max() - de['rank']
 
 
     print(cp.head())
