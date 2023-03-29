@@ -123,15 +123,16 @@ def main(cp_file: str, de_file: str):
         positive_view, negative_view = get_actual_rank_sum(cp, de)
 
         # append smaller value
-        if positive_view < negative_view:
-            rank_sums.append(positive_view)
-        else:
-            rank_sums.append(negative_view)
+        # if positive_view < negative_view:
+        #     rank_sums.append(positive_view)
+        # else:
+        #     rank_sums.append(negative_view)
+        rank_sums.append(positive_view)
 
     # Plot histogram of rank_sums
-    plt.hist(rank_sums, density=True, bins=20, edgecolor='black')
+    plt.hist(rank_sums, edgecolor='black')
     plt.xlabel('Rank Sum')
-    plt.ylabel('Probability')
+    plt.ylabel('Count')
     plt.title('Histogram of Rank Sum')
     plt.savefig('hist.png')
     plt.show()
