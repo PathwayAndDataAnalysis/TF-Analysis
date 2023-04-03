@@ -1,54 +1,184 @@
+import random
 import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def get_actual_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
+def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     """
     :param network: Causal-priors network in pd.DataFrame format
     :param rank_df:  Differential expression data in pd.DataFrame format.
     Also contains rank and reverse_rank columns
     :return: Actual rank-sum of genes in de dataframe
     """
-
-    # Create a new column named rank in cp dataframe
-    network['rank'] = 0
-
-    # Create a new column named reverse_rank in cp dataframe
-    network['reverse_rank'] = 0
-
-    # Find the rank of targetSymbol in Symbols column of rank_df dataframe
-    # and assign it to rank column of network dataframe
-    for i in range(len(network)):
-        network.loc[i, 'rank'] = rank_df[rank_df['Symbols'] == network.loc[i, 'targetSymbol']]['rank'].values[0]
-        network.loc[i, 'reverse_rank'] = \
-            rank_df[rank_df['Symbols'] == network.loc[i, 'targetSymbol']]['reverse_rank'].values[0]
-        network.loc[i, 'SignedP'] = rank_df[rank_df['Symbols'] == network.loc[i, 'targetSymbol']]['SignedP'].values[0]
+    # Find how many Symbols are repeated in network dataframe and store it in a dictionary
+    # key: Symbol
+    # value: Number of times Symbol is repeated
+    symbol_count = network['Symbols'].value_counts().to_dict()
 
     # Create a column named is_upregulated in network dataframe
     # Insert 1 if action column is upregulates-expression
     # Insert -1 if action column is downregulates-expression
     network['is_upregulated'] = np.where(network['action'] == 'upregulates-expression', 1, -1)
 
-    # Calculate Rank-Sum
-    # There are two types of rank-sum
-    # 1. Positive View: For rows where updown column is 1, add rank column values of network dataframe
-    #                   and for rows where updown column is -1, add reverse_rank column values of network dataframe
-    # 2. Negative View: For rows where updown column is 1, add reverse_rank column values of network dataframe
-    #                   and for rows where updown column is -1, add rank column values of network dataframe
+    # Find the ranks of targetSymbols in Symbols column of rank_df dataframe and add it to a new column named rank
+    # in network dataframe
+    network['rank'] = network['targetSymbol'].apply(lambda x: rank_df[rank_df['Symbols'] == x]['rank'].values[0])
+    network['reverse_rank'] = network['targetSymbol'].apply(
+        lambda x: rank_df[rank_df['Symbols'] == x]['reverse_rank'].values[0])
 
-    # Positive View
-    positive_view = network[network['is_upregulated'] == 1]['rank'].sum() + \
-                    network[network['is_upregulated'] == -1]['reverse_rank'].sum()
-    # Negative View
-    negative_view = network[network['is_upregulated'] == 1]['reverse_rank'].sum() + \
-                    network[network['is_upregulated'] == -1]['rank'].sum()
+    # Group by Symbols column also add rank value if is_upregulated column is 1 and add reverse_rank value if
+    # is_upregulated column is -1 to group
+    # and store it in a dataframe
+    # key: Symbols
+    # value: Sum of ranks if is_upregulated column is 1 and sum of reverse_ranks if is_upregulated column is -1
+    actual_rank_sum_df = network.groupby('Symbols').apply(
+        lambda x: x[x['is_upregulated'] == 1]['rank'].sum() + x[x['is_upregulated'] == -1][
+            'reverse_rank'].sum()).reset_index(name='rank_sum')
 
-    # print('Positive View: ', positive_view)
-    # print('Negative View: ', negative_view)
+    # Add new column named negative_rank_sum in actual_rank_sum_df dataframe. If is_upregulated column is 1
+    # then add reverse_rank value to negative_rank_sum column and if is_upregulated column is -1 then add rank value
+    # to negative_rank_sum column
+    actual_rank_sum_df['negative_rank_sum'] = network.groupby('Symbols').apply(
+        lambda x: x[x['is_upregulated'] == 1]['reverse_rank'].sum() + x[x['is_upregulated'] == -1][
+            'rank'].sum()).reset_index(name='negative_rank_sum')['negative_rank_sum']
 
-    return positive_view, negative_view
+    # Count how many 1's and -1's are there in is_upregulated column for each Symbol
+    # and store it in a dataframe
+    # key: Symbols
+    # value: List of 1's and -1's
+    target_counts_df = network.groupby('Symbols')['is_upregulated'].apply(list).reset_index(name='count')
+
+    # Create another column by counting how many 1's and -1's are there in count column and create a
+    # tuple(count of 1's, count of -1's)
+    # and store it in a dataframe
+    # key: Symbols
+    # value: Number of 1's and -1's
+    target_counts_df['up_down_tuple'] = target_counts_df['count'].apply(lambda x: (x.count(1), x.count(-1)))
+
+    # Remove rows where the sum of values in up_down_tuple is less than 3
+    target_counts_df = target_counts_df[target_counts_df['up_down_tuple'].apply(lambda x: x[0] + x[1]) >= 3]
+
+    # find the maximum number of times a Symbol is repeated
+    max_count = max(symbol_count.values())
+
+    # Find the max rank from rank_df dataframe
+    max_rank = rank_df['rank'].max()
+
+    tp53_rank_sum_list = []
+    stat3_rank_sum_list = []
+    jun_rank_sum_list = []
+    myc_rank_sum_list = []
+
+    for i in range(100_000):
+        # Find the max_count random numbers from 0 to max_rank
+        # and store it in a list
+        random_list = np.random.randint(0, max_rank, max_count)
+
+        # Create reverse random_list from rank_df dataframe
+        reverse_random_list = max_rank - np.array(random_list)
+
+        # up_down_tuple is in the form of (x, y) where x is the number of 1's and y is the number of -1's
+        # Choose x random numbers from random_list and y random numbers from reverse_random_list
+        # and store it in a dataframe
+        # key: Symbols
+        # value: List of random numbers
+        target_counts_df['random_ranks'] = target_counts_df['up_down_tuple'].apply(
+            lambda x: random.sample(list(random_list), x[0]) + random.sample(list(reverse_random_list), x[1]))
+
+        # Find reverse rank from random_ranks column and store it in a new column named negative_random_ranks
+        target_counts_df['negative_random_ranks'] = target_counts_df['random_ranks'].apply(
+            lambda x: max_rank - np.array(x))
+
+        # Add values in random_ranks and store it in a new column named rank_sum
+        target_counts_df['rank_sum'] = target_counts_df['random_ranks'].apply(lambda x: sum(x))
+
+        target_counts_df['negative_rank_sum'] = target_counts_df['negative_random_ranks'].apply(lambda x: sum(x))
+
+        # Collect the rank_sum values for TP53 value in Symbols column and store it in a list
+        # tp53_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'TP53']['rank_sum'].values[0])
+        # stat3_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'STAT3']['rank_sum'].values[0])
+        # jun_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'JUN']['rank_sum'].values[0])
+        # myc_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'MYC']['rank_sum'].values[0])
+
+        # Collect the value which is minimum between rank_sum and negative_rank_sum values for TP53 value in Symbols
+        # column and store it in a list
+        tp53_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'TP53']['rank_sum'].values[0],
+                                      target_counts_df[target_counts_df['Symbols'] == 'TP53'][
+                                          'negative_rank_sum'].values[0]))
+        stat3_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'STAT3']['rank_sum'].values[0],
+                                       target_counts_df[target_counts_df['Symbols'] == 'STAT3'][
+                                           'negative_rank_sum'].values[0]))
+        jun_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'JUN']['rank_sum'].values[0],
+                                     target_counts_df[target_counts_df['Symbols'] == 'JUN']['negative_rank_sum'].values[
+                                         0]))
+        myc_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'MYC']['rank_sum'].values[0],
+                                     target_counts_df[target_counts_df['Symbols'] == 'MYC']['negative_rank_sum'].values[
+                                         0]))
+
+    # Plot tp53_rank_sum_list in histogram
+    plt.hist(tp53_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
+    plt.title('Histogram of rank-sum for TP53')
+    plt.xlabel('Rank-sum')
+    plt.ylabel('Frequency')
+    plt.grid(axis='y', alpha=0.75)
+    # Find actual rank_sum value for TP53
+    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['rank_sum'].values[0]
+    # Find the value which is minimum between rank_sum and negative_rank_sum values for TP53
+    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['rank_sum'].values[0],
+                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['negative_rank_sum'].values[0])
+
+    # Plot a vertical line at actual rank_sum value for TP53
+    plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    plt.show()
+
+    # Plot stat3_rank_sum_list in histogram
+    plt.hist(stat3_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
+    plt.title('Histogram of rank-sum for STAT3')
+    plt.xlabel('Rank-sum')
+    plt.ylabel('Frequency')
+    plt.grid(axis='y', alpha=0.75)
+    # Find actual rank_sum value for STAT3
+    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3']['rank_sum'].values[0]
+    # Find the value which is minimum between rank_sum and negative_rank_sum values for STAT3
+    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3']['rank_sum'].values[0],
+                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3']['negative_rank_sum'].values[0])
+    # Plot a vertical line at actual rank_sum value for STAT3
+    plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    plt.show()
+
+    # Plot jun_rank_sum_list in histogram
+    plt.hist(jun_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
+    plt.title('Histogram of rank-sum for JUN')
+    plt.xlabel('Rank-sum')
+    plt.ylabel('Frequency')
+    plt.grid(axis='y', alpha=0.75)
+    # Find actual rank_sum value for JUN
+    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['rank_sum'].values[0]
+    # Find the value which is minimum between rank_sum and negative_rank_sum values for JUN
+    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['rank_sum'].values[0],
+                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['negative_rank_sum'].values[0])
+    # Plot a vertical line at actual rank_sum value for JUN
+    plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    plt.show()
+
+    # Plot myc_rank_sum_list in histogram
+    plt.hist(myc_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
+    plt.title('Histogram of rank-sum for MYC')
+    plt.xlabel('Rank-sum')
+    plt.ylabel('Frequency')
+    plt.grid(axis='y', alpha=0.75)
+    # Find actual rank_sum value for MYC
+    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'MYC']['rank_sum'].values[0]
+    # Find the value which is minimum between rank_sum and negative_rank_sum values for MYC
+    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'MYC']['rank_sum'].values[0],
+                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'MYC']['negative_rank_sum'].values[0])
+    # Plot a vertical line at actual rank_sum value for MYC
+    plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    plt.show()
+
+    pass
 
 
 def main(cp_file: str, de_file: str):
@@ -103,45 +233,7 @@ def main(cp_file: str, de_file: str):
         # Sort Symbols column in ascending order of cp dataframe
         cp = cp.sort_values(by=['Symbols'], ascending=True, ignore_index=True)
 
-        actual_ptive_rank_sum, actual_ntive_rank_sum = get_actual_rank_sum(cp, de)
-
-        print('Actual Positive Rank Sum: ', actual_ptive_rank_sum)
-        print('Actual Negative Rank Sum: ', actual_ntive_rank_sum)
-
-
-        # Randomize rank column of de dataframe
-        rank_sums = []
-        for i in range(10):
-            # Randomize rank column of de dataframe
-            de['rank'] = np.random.permutation(de['rank'])
-
-            # Add reverse_rank column to de dataframe
-            de['reverse_rank'] = de['rank'].max() - de['rank']
-
-            positive_view, negative_view = get_actual_rank_sum(cp, de)
-
-            # append smaller value
-            if positive_view < negative_view:
-                rank_sums.append(positive_view)
-            else:
-                rank_sums.append(negative_view)
-            # rank_sums.append(positive_view)
-
-        # create new file to save rank_sums in csv format
-        pd.DataFrame(rank_sums).to_csv('rank_sums.csv', index=False)
-
-
-        # Plot histogram of rank_sums
-        plt.hist(rank_sums, edgecolor='white', bins='auto', color='#607c8e', rwidth=0.9)
-        plt.xlabel('Rank Sum')
-        plt.ylabel('Count')
-        plt.grid(axis='y', alpha=0.75)
-        plt.title('Histogram of Rank Sum')
-        plt.savefig('hist.png')
-        plt.show()
-
-        print(cp.head())
-        print(de.head())
+        get_rank_sum(cp, de)
 
     except FileNotFoundError:
         print('File not found: ', cp_file)
