@@ -65,85 +65,91 @@ def main(cp_file: str, de_file: str):
         print('Please provide causal-priors and differential-exp file path as string')
         sys.exit(1)
 
-    cp = pd.read_csv(cp_file, sep='\t', header=None)
-    cp.columns = ['Symbols', 'action', 'targetSymbol', 'reference', 'residual']
+    # Try except block to handle file not found error
+    try:
 
-    # remove all columns except upregulates-expression and downregulates-expression
-    cp = cp[cp['action'].isin(['upregulates-expression', 'downregulates-expression'])]
-    # reset index
-    cp = cp.reset_index(drop=True)
+        cp = pd.read_csv(cp_file, sep='\t', header=None)
+        cp.columns = ['Symbols', 'action', 'targetSymbol', 'reference', 'residual']
 
-    # delete reference and residual columns
-    cp = cp.drop(['reference', 'residual'], axis=1)
+        # remove all columns except upregulates-expression and downregulates-expression
+        cp = cp[cp['action'].isin(['upregulates-expression', 'downregulates-expression'])]
+        # reset index
+        cp = cp.reset_index(drop=True)
 
-    de = pd.read_csv(de_file, sep='\t')
+        # delete reference and residual columns
+        cp = cp.drop(['reference', 'residual'], axis=1)
 
-    # Create a new column named updown based on positive
-    # and negative values of SignedP column of de dataframe
-    de['updown'] = np.where(de['SignedP'] > 0, '1', '-1')
+        de = pd.read_csv(de_file, sep='\t')
 
-    # Sort SignedP column in ascending order if updown column is 1
-    # and sort absolute values of SignedP column in ascending order if updown column is -1
-    de = de.sort_values(by=['updown', 'SignedP'], ascending=[False, True])
+        # Create a new column named updown based on positive
+        # and negative values of SignedP column of de dataframe
+        de['updown'] = np.where(de['SignedP'] > 0, '1', '-1')
 
-    # Remove rows of cp dataframe if targetSymbol is not present in Symbols column of rank_df dataframe
-    cp = cp[cp['targetSymbol'].isin(de['Symbols'])]
-    # Reset index
-    cp = cp.reset_index(drop=True)
+        # Sort SignedP column in ascending order if updown column is 1
+        # and sort absolute values of SignedP column in ascending order if updown column is -1
+        de = de.sort_values(by=['updown', 'SignedP'], ascending=[False, True])
 
-    # # Remove rows of rank_df dataframe if Symbols is not present in targetSymbol column of cp dataframe
-    # de = de[de['Symbols'].isin(cp['targetSymbol'])]
-    # # Reset index
-    # de = de.reset_index(drop=True)
+        # Remove rows of cp dataframe if targetSymbol is not present in Symbols column of rank_df dataframe
+        cp = cp[cp['targetSymbol'].isin(de['Symbols'])]
+        # Reset index
+        cp = cp.reset_index(drop=True)
 
-    # Add new column named rank to de dataframe
-    de['rank'] = np.arange(len(de))
-
-    # Add reverse_rank column to de dataframe
-    de['reverse_rank'] = de['rank'].max() - de['rank']
-
-    # Sort Symbols column in ascending order of cp dataframe
-    cp = cp.sort_values(by=['Symbols'], ascending=True, ignore_index=True)
-
-    actual_ptive_rank_sum, actual_ntive_rank_sum = get_actual_rank_sum(cp, de)
-
-    print('Actual Positive Rank Sum: ', actual_ptive_rank_sum)
-    print('Actual Negative Rank Sum: ', actual_ntive_rank_sum)
-
-
-    # Randomize rank column of de dataframe
-    rank_sums = []
-    for i in range(10):
-        # Randomize rank column of de dataframe
-        de['rank'] = np.random.permutation(de['rank'])
+        # Add new column named rank to de dataframe
+        de['rank'] = np.arange(len(de))
 
         # Add reverse_rank column to de dataframe
         de['reverse_rank'] = de['rank'].max() - de['rank']
 
-        positive_view, negative_view = get_actual_rank_sum(cp, de)
+        # Sort Symbols column in ascending order of cp dataframe
+        cp = cp.sort_values(by=['Symbols'], ascending=True, ignore_index=True)
 
-        # append smaller value
-        if positive_view < negative_view:
-            rank_sums.append(positive_view)
-        else:
-            rank_sums.append(negative_view)
-        # rank_sums.append(positive_view)
+        actual_ptive_rank_sum, actual_ntive_rank_sum = get_actual_rank_sum(cp, de)
 
-    # create new file to save rank_sums in csv format
-    pd.DataFrame(rank_sums).to_csv('rank_sums.csv', index=False)
+        print('Actual Positive Rank Sum: ', actual_ptive_rank_sum)
+        print('Actual Negative Rank Sum: ', actual_ntive_rank_sum)
 
 
-    # Plot histogram of rank_sums
-    plt.hist(rank_sums, edgecolor='white', bins='auto', color='#607c8e', rwidth=0.9)
-    plt.xlabel('Rank Sum')
-    plt.ylabel('Count')
-    plt.grid(axis='y', alpha=0.75)
-    plt.title('Histogram of Rank Sum')
-    plt.savefig('hist.png')
-    plt.show()
+        # Randomize rank column of de dataframe
+        rank_sums = []
+        for i in range(10):
+            # Randomize rank column of de dataframe
+            de['rank'] = np.random.permutation(de['rank'])
 
-    print(cp.head())
-    print(de.head())
+            # Add reverse_rank column to de dataframe
+            de['reverse_rank'] = de['rank'].max() - de['rank']
+
+            positive_view, negative_view = get_actual_rank_sum(cp, de)
+
+            # append smaller value
+            if positive_view < negative_view:
+                rank_sums.append(positive_view)
+            else:
+                rank_sums.append(negative_view)
+            # rank_sums.append(positive_view)
+
+        # create new file to save rank_sums in csv format
+        pd.DataFrame(rank_sums).to_csv('rank_sums.csv', index=False)
+
+
+        # Plot histogram of rank_sums
+        plt.hist(rank_sums, edgecolor='white', bins='auto', color='#607c8e', rwidth=0.9)
+        plt.xlabel('Rank Sum')
+        plt.ylabel('Count')
+        plt.grid(axis='y', alpha=0.75)
+        plt.title('Histogram of Rank Sum')
+        plt.savefig('hist.png')
+        plt.show()
+
+        print(cp.head())
+        print(de.head())
+
+    except FileNotFoundError:
+        print('File not found: ', cp_file)
+        sys.exit(1)
+
+    except Exception as e:
+        print(e)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
