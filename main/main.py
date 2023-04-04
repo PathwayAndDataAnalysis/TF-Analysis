@@ -81,17 +81,16 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     tp53_rank_sum_list = []
     stat3_rank_sum_list = []
     jun_rank_sum_list = []
-    myc_rank_sum_list = []
+    irf1_rank_sum_list = []
 
-    # Add a new column in target_counts_df dataframe to store total rank_sum values
-    # Add another column in target_counts_df dataframe to store total ranks sum which is less than actual rank_sum
-    target_counts_df['total_rank_sum'] = 0
-    target_counts_df['total_rank_sum_lt_actual_rs'] = 0
+    # Add a new column in target_counts_df to store how many times the rank sum is less than the actual rank sum
+    target_counts_df['rank_sum_less_than_actual'] = 0
 
-    for i in range(100_000):
+    rand_iter = 1_000
+    for i in range(rand_iter):
         # Find the max_targets random numbers from 0 to max_rank
         # and store it in a list
-        randomly_drawn_list = np.random.randint(0, max_rank+1, max_targets)
+        randomly_drawn_list = np.random.randint(0, max_rank + 1, max_targets)
 
         # Create reverse randomly_drawn_list from rank_df dataframe
         reverse_randomly_drawn_list = max_rank - np.array(randomly_drawn_list)
@@ -102,7 +101,8 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
         # key: Symbols
         # value: List of random numbers
         target_counts_df['random_ranks'] = target_counts_df['up_down_tuple'].apply(
-            lambda x: random.sample(list(randomly_drawn_list), x[0]) + random.sample(list(reverse_randomly_drawn_list), x[1]))
+            lambda x: random.sample(list(randomly_drawn_list), x[0]) + random.sample(list(reverse_randomly_drawn_list),
+                                                                                     x[1]))
 
         # Find reverse rank from random_ranks column and store it in a new column named negative_random_ranks
         target_counts_df['negative_random_ranks'] = target_counts_df['random_ranks'].apply(
@@ -110,48 +110,46 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
 
         # Add values in random_ranks and store it in a new column named rank_sum
         target_counts_df['rank_sum'] = target_counts_df['random_ranks'].apply(lambda x: sum(x))
-
         target_counts_df['negative_rank_sum'] = target_counts_df['negative_random_ranks'].apply(lambda x: sum(x))
 
-        # Choose the minimum value between rank_sum and negative_rank_sum and accumulate it in total_rank_sum column
-        target_counts_df['total_rank_sum'] += target_counts_df.apply(
-            lambda x: min(x['rank_sum'], x['negative_rank_sum']), axis=1)
+        # Count how many times the rank_sum is less than the actual rank sum and s
+        # tore it in a new column named rank_sum_less_than_actual
+        target_counts_df['rank_sum_less_than_actual'] += target_counts_df.apply(
+            lambda x: 1 if x['rank_sum'] < x['actual_min_rank_sum'] else 0, axis=1)
 
-        # Choose the minimum value between rank_sum and negative_rank_sum and accumulate it in
-        # total_rank_sum_lt_actual_rs column if rank_sum is less than between rank_sum and negative_rank_sum
-        target_counts_df['total_rank_sum_lt_actual_rs'] += target_counts_df.apply(
-            lambda x: min(x['rank_sum'], x['negative_rank_sum']) if x['rank_sum'] < x['actual_min_rank_sum'] else 0, axis=1)
+        # Add column p-value by dividing rank_sum_less_than_actual by rand_iter
+        # if rank_sum_less_than_actual is less than zero, then add 1 to it and then divide it by rand_iter
+        target_counts_df['p-value'] = target_counts_df['rank_sum_less_than_actual'].apply(
+            lambda x: (x + 1) / rand_iter if x == 0 else x / rand_iter)
 
-        # Add another column called area under curve by dividing total_rank_sum_lt_actual_rs by total_rank_sum
-        target_counts_df['auc'] = target_counts_df['total_rank_sum_lt_actual_rs'] / target_counts_df['total_rank_sum']
         # Add another column is_min_enough by checking if auc is less than 0.15
-        target_counts_df['is_min_enough'] = target_counts_df['auc'] < 0.15
+        target_counts_df['is_min_enough'] = target_counts_df['p-value'] < 0.15
 
         # Save the dataframe to a csv file
-        target_counts_df.to_csv('../data/output_file.csv', index=False)
-
-
+        target_counts_df.to_csv('../data/output_file100k.csv', index=False)
 
         # Collect the rank_sum values for TP53 value in Symbols column and store it in a list
         tp53_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'TP53']['rank_sum'].values[0])
         # stat3_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'STAT3']['rank_sum'].values[0])
         # jun_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'JUN']['rank_sum'].values[0])
-        # myc_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'MYC']['rank_sum'].values[0])
+        # irf1_rank_sum_list.append(target_counts_df[target_counts_df['Symbols'] == 'MYC']['rank_sum'].values[0])
 
         # Collect the value which is minimum between rank_sum and negative_rank_sum values for TP53 value in Symbols
         # column and store it in a list
         tp53_min_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'TP53']['rank_sum'].values[0],
-                                      target_counts_df[target_counts_df['Symbols'] == 'TP53'][
-                                          'negative_rank_sum'].values[0]))
+                                          target_counts_df[target_counts_df['Symbols'] == 'TP53'][
+                                              'negative_rank_sum'].values[0]))
         stat3_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'STAT3']['rank_sum'].values[0],
                                        target_counts_df[target_counts_df['Symbols'] == 'STAT3'][
                                            'negative_rank_sum'].values[0]))
         jun_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'JUN']['rank_sum'].values[0],
                                      target_counts_df[target_counts_df['Symbols'] == 'JUN']['negative_rank_sum'].values[
                                          0]))
-        myc_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'MYC']['rank_sum'].values[0],
-                                     target_counts_df[target_counts_df['Symbols'] == 'MYC']['negative_rank_sum'].values[
-                                         0]))
+        irf1_rank_sum_list.append(min(target_counts_df[target_counts_df['Symbols'] == 'IRF1']['rank_sum'].values[0],
+                                      target_counts_df[target_counts_df['Symbols'] == 'IRF1'][
+                                          'negative_rank_sum'].values[
+                                          0]))
+
 
     # Plot tp53_min_rank_sum_list in histogram
     plt.hist(tp53_min_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
@@ -159,13 +157,15 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     plt.xlabel('min Rank-sum')
     plt.ylabel('Frequency')
     plt.grid(axis='y', alpha=0.75)
-    # Find actual rank_sum value for TP53
-    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['rank_sum'].values[0]
+    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['actual_rank_sum'].values[0]
     # Find the value which is minimum between rank_sum and negative_rank_sum values for TP53
-    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['rank_sum'].values[0],
-                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['negative_rank_sum'].values[0])
+    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['actual_rank_sum'].values[0],
+                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53'][
+                              'actual_negative_rank_sum'].values[0])
     # Plot a vertical line at actual rank_sum value for TP53
     plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    # save the plot
+    plt.savefig('../data/tp53_min_rank_sum.png')
     plt.show()
 
     # Plot tp53_rank_sum_list in histogram
@@ -175,10 +175,13 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     plt.ylabel('Frequency')
     plt.grid(axis='y', alpha=0.75)
     # Find actual rank_sum value for TP53
-    actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['rank_sum'].values[0]
+    actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'TP53']['actual_rank_sum'].values[0]
     # Plot a vertical line at actual rank_sum value for TP53
     plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    # save the plot
+    plt.savefig('../data/tp53_rank_sum.png')
     plt.show()
+
 
     # Plot stat3_rank_sum_list in histogram
     plt.hist(stat3_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
@@ -187,13 +190,17 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     plt.ylabel('Frequency')
     plt.grid(axis='y', alpha=0.75)
     # Find actual rank_sum value for STAT3
-    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3']['rank_sum'].values[0]
+    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3']['actual_rank_sum'].values[0]
     # Find the value which is minimum between rank_sum and negative_rank_sum values for STAT3
-    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3']['rank_sum'].values[0],
-                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3']['negative_rank_sum'].values[0])
+    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3']['actual_rank_sum'].values[0],
+                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'STAT3'][
+                              'actual_negative_rank_sum'].values[0])
     # Plot a vertical line at actual rank_sum value for STAT3
     plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    # save the plot
+    plt.savefig('../data/stat3_rank_sum.png')
     plt.show()
+
 
     # Plot jun_rank_sum_list in histogram
     plt.hist(jun_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
@@ -202,27 +209,33 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     plt.ylabel('Frequency')
     plt.grid(axis='y', alpha=0.75)
     # Find actual rank_sum value for JUN
-    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['rank_sum'].values[0]
+    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['actual_rank_sum'].values[0]
     # Find the value which is minimum between rank_sum and negative_rank_sum values for JUN
-    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['rank_sum'].values[0],
-                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['negative_rank_sum'].values[0])
+    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['actual_rank_sum'].values[0],
+                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'JUN']['actual_negative_rank_sum'].values[0])
     # Plot a vertical line at actual rank_sum value for JUN
     plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    # save the plot
+    plt.savefig('../data/jun_rank_sum.png')
     plt.show()
 
-    # Plot myc_rank_sum_list in histogram
-    plt.hist(myc_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
-    plt.title('Histogram of rank-sum for MYC')
+
+    # Plot irf1_rank_sum_list in histogram
+    plt.hist(irf1_rank_sum_list, bins=100, edgecolor='white', color='#607c8e')
+    plt.title('Histogram of rank-sum for IRF1')
     plt.xlabel('Rank-sum')
     plt.ylabel('Frequency')
     plt.grid(axis='y', alpha=0.75)
     # Find actual rank_sum value for MYC
-    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'MYC']['rank_sum'].values[0]
+    # actual_rank_sum = actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'MYC']['actual_rank_sum'].values[0]
     # Find the value which is minimum between rank_sum and negative_rank_sum values for MYC
-    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'MYC']['rank_sum'].values[0],
-                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'MYC']['negative_rank_sum'].values[0])
+    actual_rank_sum = min(actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'IRF1']['actual_rank_sum'].values[0],
+                          actual_rank_sum_df[actual_rank_sum_df['Symbols'] == 'IRF1'][
+                              'actual_negative_rank_sum'].values[0])
     # Plot a vertical line at actual rank_sum value for MYC
     plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
+    # save the plot
+    plt.savefig('../data/irf1_rank_sum.png')
     plt.show()
 
 
@@ -294,4 +307,3 @@ if __name__ == '__main__':
     diff_file = '../data/differential-exp.tsv'  # sys.argv[2]
 
     main(priors_file, diff_file)
-
