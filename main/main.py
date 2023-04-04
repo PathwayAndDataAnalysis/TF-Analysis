@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import time
 
 
 def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
@@ -87,7 +88,7 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     target_counts_df['total_rank_sum'] = 0
     target_counts_df['total_rank_sum_lt_actual_rs'] = 0
 
-    for i in range(1_000):
+    for i in range(100_000):
         # Find the max_targets random numbers from 0 to max_rank
         # and store it in a list
         randomly_drawn_list = np.random.randint(0, max_rank+1, max_targets)
@@ -125,6 +126,9 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
         target_counts_df['auc'] = target_counts_df['total_rank_sum_lt_actual_rs'] / target_counts_df['total_rank_sum']
         # Add another column is_min_enough by checking if auc is less than 0.15
         target_counts_df['is_min_enough'] = target_counts_df['auc'] < 0.15
+
+        # Save the dataframe to a csv file
+        target_counts_df.to_csv('../data/output_file.csv', index=False)
 
 
 
@@ -221,8 +225,6 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     plt.axvline(x=actual_rank_sum, color='r', linestyle='--')
     plt.show()
 
-    pass
-
 
 def main(cp_file: str, de_file: str):
     """
@@ -292,3 +294,4 @@ if __name__ == '__main__':
     diff_file = '../data/differential-exp.tsv'  # sys.argv[2]
 
     main(priors_file, diff_file)
+
