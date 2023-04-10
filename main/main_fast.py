@@ -58,13 +58,13 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Add a new column in target_counts_df to store how many times the rank sum is less than the actual rank sum
     target_counts_df['rank_sum_less_than_actual'] = 0
 
-    rand_iter = 100_000
+    rand_iter = 100
     for i in range(rand_iter):
         # Pick max_targets random numbers from 0 to max_rank+1
         randomly_drawn_list = np.random.randint(0, max_rank + 1, max_targets)
 
         # Create reverse randomly_drawn_list from rank_df dataframe
-        reverse_randomly_drawn_list = max_rank - np.array(randomly_drawn_list)
+        reverse_randomly_drawn_list = max_rank - randomly_drawn_list
 
         # up_down_tuple is in the form of (x, y) where x is the number of 1's and y is the number of -1's
         # Choose x random numbers from randomly_drawn_list and y random numbers from reverse_randomly_drawn_list
@@ -98,7 +98,7 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     target_counts_df['is_min_enough'] = target_counts_df['p-value'] < 0.15
 
     # Save the dataframe to a csv file
-    target_counts_df.to_csv('../data/output_file100k.csv', index=False)
+    target_counts_df.to_csv('../output/output_file.csv', index=False)
 
 
 def main(cp_file: str, de_file: str):
@@ -166,5 +166,6 @@ def main(cp_file: str, de_file: str):
 if __name__ == '__main__':
     priors_file = '../data/causal-priors.txt'
     diff_file = '../data/differential-exp.tsv'
+    # diff_file = '../data/rslp_vs_lum.tsv'
 
     main(priors_file, diff_file)
