@@ -61,30 +61,41 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Find the unique values in up_down_tuple column and store it in a pandas dataframe
     updown_df = pd.DataFrame(target_counts_df['up_down_tuple'].unique(), columns=['up_down_tuple'])
 
-    rand_iter = 100
+    # Number of random iterations
+    rand_iter = 100_000
+
+    # Convert up_down_tuple into a NumPy array for faster operations
+    up_down_tuple_list = updown_df['up_down_tuple'].tolist()
+
+    results_list = []
+
     for i in range(rand_iter):
         # Pick max_targets random numbers from 0 to max_rank+1
         randomly_drawn_list = np.random.randint(low=0, high=max_rank + 1, size=max_targets)
-
-        # Create reverse randomly_drawn_list from rank_df dataframe
         reverse_randomly_drawn_list = max_rank - randomly_drawn_list
 
-        # Create a new df
-        df = updown_df['up_down_tuple'].apply(
-            lambda x: sum(randomly_drawn_list[:x[0]]) + sum(reverse_randomly_drawn_list[x[0]:x[0]+x[1]]))
+        # Precompute cumulative sums
+        random_cumsum = np.cumsum(randomly_drawn_list)
+        reverse_random_cumsum = np.cumsum(reverse_randomly_drawn_list)
 
-        # Create a new column reverse_rank in df and store reverse rank sum
-        rev_df = updown_df['up_down_tuple'].apply(
-            lambda x: sum(reverse_randomly_drawn_list[:x[0]]) + sum(randomly_drawn_list[x[0]:x[0] + x[1]]))
+        # Calculate the sums using list comprehensions and NumPy operations
+        df = np.array(
+            [random_cumsum[x[0] - 1] + reverse_random_cumsum[x[0] + x[1] - 1] - reverse_random_cumsum[x[0] - 1] for x in
+             up_down_tuple_list])
+        rev_df = np.array(
+            [reverse_random_cumsum[x[0] - 1] + random_cumsum[x[0] + x[1] - 1] - random_cumsum[x[0] - 1] for x in
+             up_down_tuple_list])
 
-        # for each row find minimum between rank sum and reverse rank sum
-        min_df = df.apply(lambda x: min(x, rev_df[df.index[df == x][0]]))
+        # Find the minimum between df and rev_df
+        min_df = np.minimum(df, rev_df)
 
-        # Rename the column to i
-        min_df.rename(i, inplace=True)
+        # Store the result in the results DataFrame
+        results_list.append(min_df)
 
-        # Concatenate updown_df and df and store it in updown_df
-        updown_df = pd.concat([updown_df, min_df], axis=1)
+    results = pd.DataFrame(np.column_stack(results_list))
+
+    # Merge the results DataFrame with updown_df
+    updown_df = pd.concat([updown_df, results], axis=1)
 
     # New dataframe using up_down_tuple of updown_df and another column rank_sum_list which contains
     # list of rank sums for each up_down_tuple
