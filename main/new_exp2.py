@@ -61,16 +61,16 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Find the unique values in up_down_tuple column and store it in a pandas dataframe
     updown_df = pd.DataFrame(target_counts_df['up_down_tuple'].unique(), columns=['up_down_tuple'])
 
-    # Number of random iterations
-    rand_iter = 1_000
+    # Number of iterations
+    iters = 1_000
 
     # Convert up_down_tuple into a NumPy array for faster operations
     up_down_tuple_list = updown_df['up_down_tuple'].tolist()
 
     # Initialize the array to store results
-    results_array = np.zeros((len(up_down_tuple_list), rand_iter))
+    results_array = np.zeros((len(up_down_tuple_list), iters))
 
-    for i in range(rand_iter):
+    for i in range(iters):
         # Pick max_targets random numbers from 0 to max_rank+1
         randomly_drawn_list = np.random.randint(low=0, high=max_rank + 1, size=max_targets)
         reverse_randomly_drawn_list = max_rank - randomly_drawn_list
@@ -80,12 +80,10 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
         reverse_random_cumsum = np.cumsum(reverse_randomly_drawn_list)
 
         # Calculate the sums using list comprehensions and NumPy operations
-        df = np.array(
-            [random_cumsum[x[0] - 1] + reverse_random_cumsum[x[0] + x[1] - 1] - reverse_random_cumsum[x[0] - 1] for x in
-             up_down_tuple_list])
-        rev_df = np.array(
-            [reverse_random_cumsum[x[0] - 1] + random_cumsum[x[0] + x[1] - 1] - random_cumsum[x[0] - 1] for x in
-             up_down_tuple_list])
+        df = np.array([random_cumsum[x[0] - 1] + reverse_random_cumsum[x[0] + x[1] - 1]
+                       - reverse_random_cumsum[x[0] - 1] for x in up_down_tuple_list])
+        rev_df = np.array([reverse_random_cumsum[x[0] - 1] + random_cumsum[x[0] + x[1] - 1]
+                           - random_cumsum[x[0] - 1] for x in up_down_tuple_list])
 
         # Find the minimum between df and rev_df
         min_df = np.minimum(df, rev_df)
@@ -114,7 +112,7 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
 
     # Calculate the p-value
     target_counts_df['p-value'] = target_counts_df['rank_sum_less_than_actual'].apply(
-        lambda x: (x + 1) / rand_iter if x == 0 else x / rand_iter)
+        lambda x: (x + 1) / iters if x == 0 else x / iters)
 
     # Drop the columns which are not required
     target_counts_df.drop(['rank_sum_list'], axis=1, inplace=True)

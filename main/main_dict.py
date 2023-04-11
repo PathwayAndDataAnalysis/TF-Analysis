@@ -61,7 +61,14 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Find the unique values in up_down_tuple column and store it in a pandas dataframe
     updown_df = pd.DataFrame(target_counts_df['up_down_tuple'].unique(), columns=['up_down_tuple'])
 
-    rand_iter = 100
+    # Convert up_down_tuple into a NumPy array for faster operations
+    up_down_tuple_list = updown_df['up_down_tuple'].tolist()
+
+    rand_iter = 100_000
+
+    # Initialize the array to store results
+    results_array = np.zeros((len(up_down_tuple_list), rand_iter))
+
     for i in range(rand_iter):
         # Pick max_targets random numbers from 0 to max_rank+1
         randomly_drawn_list = np.random.randint(low=0, high=max_rank + 1, size=max_targets)
@@ -70,21 +77,19 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
         reverse_randomly_drawn_list = max_rank - randomly_drawn_list
 
         # Create a new df
-        df = updown_df['up_down_tuple'].apply(
-            lambda x: sum(randomly_drawn_list[:x[0]]) + sum(reverse_randomly_drawn_list[x[0]:x[0]+x[1]]))
+        df = np.array([sum(randomly_drawn_list[:x[0]]) + sum(reverse_randomly_drawn_list[x[0]:x[0] + x[1]]) for x in up_down_tuple_list])
 
         # Create a new column reverse_rank in df and store reverse rank sum
-        rev_df = updown_df['up_down_tuple'].apply(
-            lambda x: sum(reverse_randomly_drawn_list[:x[0]]) + sum(randomly_drawn_list[x[0]:x[0] + x[1]]))
+        rev_df = np.array([sum(reverse_randomly_drawn_list[:x[0]]) + sum(randomly_drawn_list[x[0]:x[0] + x[1]]) for x in up_down_tuple_list])
 
         # Find the minimum between df and rev_df
         min_df = np.minimum(df, rev_df)
 
-        # Rename the column to i
-        min_df.rename(i, inplace=True)
+        # Store the result in the results_array
+        results_array[:, i] = min_df
 
-        # Concatenate updown_df and df and store it in updown_df
-        updown_df = pd.concat([updown_df, min_df], axis=1)
+    # Concatenate updown_df and df and store it in updown_df
+    updown_df = pd.concat([updown_df, pd.DataFrame(results_array)], axis=1)
 
     # New dataframe using up_down_tuple of updown_df and another column rank_sum_list which contains
     # list of rank sums for each up_down_tuple
