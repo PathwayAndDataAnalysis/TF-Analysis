@@ -70,30 +70,26 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Initialize the array to store results
     results_array = np.zeros((len(unique_total_count), rand_iter))
 
+    # Check how many times this for loop takes to run
+    loop_start = timer()
     for i in range(rand_iter):
-        # Pick max_targets random numbers from 0 to max_rank+1
-        randomly_drawn_list = np.random.choice(max_rank + 1, max_targets, replace=False)
+        # Draw a random number from 0 to max_rank+1
+        drawn_list = np.random.choice(max_rank + 1, max_targets, replace=False)
+        reverse_drawn_list = max_rank - drawn_list
+        min_rank_sum = np.minimum(np.cumsum(drawn_list), np.cumsum(reverse_drawn_list))
+        results_array[:, i] = [min_rank_sum[x-1] for x in unique_total_count]
 
-        # Create reverse randomly_drawn_list from rank_df dataframe
-        reverse_randomly_drawn_list = max_rank - randomly_drawn_list
+    loop_end = timer()
+    print(f'Loop took {loop_end - loop_start} seconds')  # took 28.592077041015727 seconds
 
-        results_array[:, i] = [
-            min(
-                sum(randomly_drawn_list[:x]),
-                sum(reverse_randomly_drawn_list[:x])
-            )
-            for x in unique_total_count
-        ]
+    # Merge all columns of results_array into a list of values
+    results_array = pd.DataFrame(results_array).apply(lambda x: x.values.tolist(), axis=1)
+    df_result = pd.concat([pd.DataFrame(unique_total_count), results_array], axis=1)
+    df_result.columns = ['totalCount', 'rank_sum_list']
 
-    # Concatenate updown_df and df and store it in updown_df
-    updown_df = pd.concat([unique_total_count, pd.DataFrame(results_array)], axis=1)
-
-    rank_sum_df = updown_df[['up_down_tuple']].copy()
-    rank_sum_df['rank_sum_list'] = updown_df.drop('up_down_tuple', axis=1).values.tolist()
-
-    # For up_down_tuple in target_counts_df, find the rank_sum_list from rank_sum_df and store it in a new column
-    target_counts_df['rank_sum_list'] = target_counts_df['up_down_tuple'].apply(
-        lambda x: rank_sum_df[rank_sum_df['up_down_tuple'] == x]['rank_sum_list'].values[0])
+    # Merge the rank_sum_list column with target_counts_df dataframe
+    target_counts_df['rank_sum_list'] = target_counts_df['totalCount'].apply(
+        lambda x: df_result[df_result['totalCount'] == x]['rank_sum_list'].values[0])
 
     # Count the numbers in rank_sum_list which are less than actual_min_rank_sum and store it in a new column
     target_counts_df['rank_sum_less_than_actual'] = target_counts_df.apply(
@@ -124,18 +120,12 @@ def main(cp_file: str, de_file: str):
         print('Please provide causal-priors and differential-exp file path as string')
         sys.exit(1)
 
-    # Try except block to handle file not found error
     try:
         cp = pd.read_csv(cp_file, sep='\t', header=None)
         cp.columns = ['Symbols', 'action', 'targetSymbol', 'reference', 'residual']
-
-        # remove all columns except upregulates-expression and downregulates-expression
-        cp = cp[cp['action'].isin(['upregulates-expression', 'downregulates-expression'])]
-        # reset index
-        cp = cp.reset_index(drop=True)
-
-        # delete reference and residual columns
         cp = cp.drop(['reference', 'residual'], axis=1)
+        cp = cp[cp['action'].isin(['upregulates-expression', 'downregulates-expression'])]
+        cp = cp.reset_index(drop=True)
 
         de = pd.read_csv(de_file, sep='\t')
 
