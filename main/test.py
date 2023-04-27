@@ -192,3 +192,37 @@ if __name__ == '__main__':
     #
     # print(times_takes)
     # print("Average Time: ", np.mean(times_takes))
+
+
+
+
+# import numpy as np
+#
+# rand_iter = 1000
+# max_rank = 500
+# max_targets = 18
+# unique_total_count = np.unique(np.random.choice(max_rank + 1, max_targets, replace=False))
+# results_array = np.zeros((len(unique_total_count), rand_iter))
+#
+# drawn_matrix = np.random.choice(max_rank + 1, (rand_iter, max_targets), replace=False)
+# reverse_drawn_matrix = max_rank - drawn_matrix
+#
+# min_rank_sum_matrix = np.minimum(np.cumsum(drawn_matrix, axis=1), np.cumsum(reverse_drawn_matrix, axis=1))
+# results_array = min_rank_sum_matrix[:, unique_total_count - 1].T
+#
+#
+#
+#
+# rand_iter = 1000
+# max_rank = 500
+# max_targets = 18
+# unique_total_count = np.unique(np.random.choice(max_rank + 1, max_targets, replace=False)
+# results_array = np.zeros((len(unique_total_count), rand_iter))
+#
+# for i in range(rand_iter):
+# # Draw a random number from 0 to max_rank+1
+#     drawn_list = np.random.choice(max_rank + 1, max_targets, replace=False)
+#     reverse_drawn_list = max_rank - drawn_list
+#
+#     min_rank_sum = np.minimum(np.cumsum(drawn_list), np.cumsum(reverse_drawn_list))
+#     results_array[:, i] = [min_rank_sum[x - 1] for x in unique_total_count]
