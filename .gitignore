@@ -138,4 +138,4 @@ dmypy.json
 
 # data files
 data/
-output/
+output/*
