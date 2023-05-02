@@ -5,10 +5,11 @@ import numpy as np
 import pandas as pd
 
 
-def main(cp_file: str, de_file: str):
+def main(cp_file: str, de_file: str, iters: int):
     """
     :param cp_file: File path of causal-priors file
     :param de_file: File path of differential-exp file
+    :param iters: Number of iterations
     :return:
     """
     if cp_file is None or de_file is None:
@@ -42,9 +43,9 @@ def main(cp_file: str, de_file: str):
         cp_df = cp_df.reset_index(drop=True)
 
         # Find the max rank
-        max_rank = len(de_df)
-        de_df['rank'] = np.arange(max_rank)
-        de_df['reverse_rank'] = (max_rank - 1) - de_df['rank']
+        max_rank = len(de_df) - 1
+        de_df['rank'] = np.arange(max_rank + 1)
+        de_df['reverse_rank'] = max_rank - de_df['rank']
 
         # Represent upregulates-expression as 1 and downregulates-expression as -1
         cp_df['isUp'] = np.where(cp_df['action'] == 'upregulates-expression', 1, -1)
@@ -52,7 +53,7 @@ def main(cp_file: str, de_file: str):
 
         # Find the rank and reverse rank of targetSymbols
         cp_df['rank'] = cp_df['targetSymbol'].apply(lambda x: de_df[de_df['Symbols'] == x]['rank'].values[0])
-        cp_df['revRank'] = (max_rank - 1) - cp_df['rank']
+        cp_df['revRank'] = max_rank - cp_df['rank']
 
         # Calculate the actual rank sum of each Symbol for positive and negative ranks
         rank_sum_df = cp_df.groupby('Symbols').apply(
@@ -62,14 +63,16 @@ def main(cp_file: str, de_file: str):
             lambda x: x[x['isUp'] == 1]['revRank'].sum() + x[x['isUp'] == -1][
                 'rank'].sum()).reset_index(name='negRS')['negRS']
 
-        # Chose value between column posRS and negRS and also find column chosen and store it in a new column
-        rank_sum_df['RS'] = np.where(rank_sum_df['posRS'] < rank_sum_df['negRS'], rank_sum_df['posRS'], rank_sum_df['negRS'])
+        # Chose value between column posRS and negRS and also find column choosed and store it in a new column
+        rank_sum_df['RS'] = np.where(rank_sum_df['posRS'] < rank_sum_df['negRS'], rank_sum_df['posRS'],
+                                     rank_sum_df['negRS'])
         rank_sum_df['whichRS'] = np.where(rank_sum_df['posRS'] < rank_sum_df['negRS'], 'posRS', 'negRS')
 
         # Create a new dataframe with key: Symbols and value: List of 1's and -1's
         output_df = cp_df.groupby('Symbols')['isUp'].apply(list).reset_index(name='upDownList')
         # Count the number of 1's and -1's in upDownList column and store it in a new column
         output_df['upDownCount'] = output_df['upDownList'].apply(lambda x: len(x))
+        # Remove rows from output_df dataframe if upDownCount is less than 3
         output_df = output_df[output_df['upDownCount'] >= 3]
 
         # Find column RS, whichRS from rank_sum_df and merge it with output_df dataframe
@@ -81,13 +84,11 @@ def main(cp_file: str, de_file: str):
         output_df['rankLessThanActual'] = 0
         uniqueUpDowns = output_df['upDownCount'].unique()
 
-        iter = 200_000
-
         # Initialize the array to store results
-        result = np.zeros((len(uniqueUpDowns), iter))
+        result = np.zeros((len(uniqueUpDowns), iters))
 
         loop_start = timer()
-        for i in range(iter):
+        for i in range(iters):
             # Draw a random number from 0 to max_rank+1
             drawn_list = np.random.choice(max_rank + 1, max_target, replace=False)
             reverse_drawn_list = max_rank - drawn_list
@@ -112,7 +113,7 @@ def main(cp_file: str, de_file: str):
         output_df.drop(['RSList'], axis=1, inplace=True)
 
         # Calculate the p-value
-        output_df['pValue'] = output_df['rankLessThanActual'] / iter
+        output_df['pValue'] = output_df['rankLessThanActual'] / iters
 
         # Save the output dataframe to a file
         output_df.to_csv('../output/ultimate_output.tsv', sep='\t', index=False)
@@ -126,12 +127,24 @@ def main(cp_file: str, de_file: str):
         sys.exit(1)
 
 
+# if __name__ == '__main__':
+#     priors_file = '../data/causal-priors.txt'
+#     diff_file = '../data/differential-exp.tsv'
+#     # diff_file = '../data/rslp_vs_lum.tsv'
+#
+#     start = timer()
+#     main(priors_file, diff_file, iters=5_000)
+#     end = timer()
+#     print("Time taken: ", end - start)
+
+
+# Command line argument
 if __name__ == '__main__':
-    priors_file = '../data/causal-priors.txt'
-    # diff_file = '../data/differential-exp.tsv'
-    diff_file = '../data/rslp_vs_lum.tsv'
+    prior_file = sys.argv[1]
+    diff_file = sys.argv[2]
+    iters = int(sys.argv[3])
 
     start = timer()
-    main(priors_file, diff_file)
+    main(prior_file, diff_file, iters)
     end = timer()
     print("Time taken: ", end - start)
