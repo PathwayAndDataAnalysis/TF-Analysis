@@ -2,7 +2,6 @@ import sys
 
 import numpy as np
 import pandas as pd
-from timeit import default_timer as timer
 
 
 def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
@@ -44,10 +43,6 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Choose minimum between actual_rank_sum and actual_negative_rank_sum as actual_min_rank_sum
     target_counts_df['actual_min_rank_sum'] = target_counts_df.apply(
         lambda x: min(x['actual_rank_sum'], x['actual_negative_rank_sum']), axis=1)
-    # Find which one is minimum and store it in IsPosNeg column
-    target_counts_df['IsPosNeg'] = target_counts_df.apply(
-        lambda x: 'Positive' if x['actual_rank_sum'] < x['actual_negative_rank_sum'] else 'Negative',
-        axis=1)
     # Drop actual_rank_sum and actual_negative_rank_sum columns from target_counts_df dataframe
     target_counts_df.drop(['actual_rank_sum', 'actual_negative_rank_sum'], axis=1, inplace=True)
 
@@ -66,38 +61,41 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Find the unique values in up_down_tuple column and store it in a pandas dataframe
     updown_df = pd.DataFrame(target_counts_df['up_down_tuple'].unique(), columns=['up_down_tuple'])
 
+    # Number of iterations
+    iters = 10
+
     # Convert up_down_tuple into a NumPy array for faster operations
     up_down_tuple_list = updown_df['up_down_tuple'].tolist()
 
-    rand_iter = 1_000
-
     # Initialize the array to store results
-    results_array = np.zeros((len(up_down_tuple_list), rand_iter))
+    results_array = np.zeros((len(up_down_tuple_list), iters))
 
-    for i in range(rand_iter):
+    for i in range(iters):
         # Pick max_targets random numbers from 0 to max_rank+1
         randomly_drawn_list = np.random.randint(low=0, high=max_rank + 1, size=max_targets)
-
-        # Create reverse randomly_drawn_list from rank_df dataframe
         reverse_randomly_drawn_list = max_rank - randomly_drawn_list
 
-        min_df = np.array(
-            [
-                min(
-                    sum(randomly_drawn_list[:x[0]]) + sum(reverse_randomly_drawn_list[x[0]:x[0] + x[1]]),
-                    # np.sum(np.concatenate((randomly_drawn_list[:x[0]], reverse_randomly_drawn_list[x[0]:x[0] + x[1]]))),
-                    sum(reverse_randomly_drawn_list[:x[0]]) + sum(randomly_drawn_list[x[0]:x[0] + x[1]])
-                    # np.sum(np.concatenate((reverse_randomly_drawn_list[:x[0]], randomly_drawn_list[x[0]:x[0] + x[1]])))
-                )
-                for x in up_down_tuple_list
-            ]
-        )
+        # Precompute cumulative sums
+        random_cumsum = np.cumsum(randomly_drawn_list)
+        reverse_random_cumsum = np.cumsum(reverse_randomly_drawn_list)
+
+        # Calculate the sums using list comprehensions and NumPy operations
+        df = np.array([random_cumsum[x[0] - 1] + reverse_random_cumsum[x[0] + x[1] - 1]
+                       - reverse_random_cumsum[x[0] - 1] for x in up_down_tuple_list])
+        rev_df = np.array([reverse_random_cumsum[x[0] - 1] + random_cumsum[x[0] + x[1] - 1]
+                           - random_cumsum[x[0] - 1] for x in up_down_tuple_list])
+
+        # Find the minimum between df and rev_df
+        min_df = np.minimum(df, rev_df)
 
         # Store the result in the results_array
         results_array[:, i] = min_df
 
-    # Concatenate updown_df and df and store it in updown_df
-    updown_df = pd.concat([updown_df, pd.DataFrame(results_array)], axis=1)
+    # Convert the results_array to a DataFrame
+    results = pd.DataFrame(results_array)
+
+    # Merge the results DataFrame with updown_df
+    updown_df = pd.concat([updown_df, results], axis=1)
 
     # New dataframe using up_down_tuple of updown_df and another column rank_sum_list which contains
     # list of rank sums for each up_down_tuple
@@ -114,7 +112,7 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
 
     # Calculate the p-value
     target_counts_df['p-value'] = target_counts_df['rank_sum_less_than_actual'].apply(
-        lambda x: (x + 1) / rand_iter if x == 0 else x / rand_iter)
+        lambda x: (x + 1) / iters if x == 0 else x / iters)
 
     # Drop the columns which are not required
     target_counts_df.drop(['rank_sum_list'], axis=1, inplace=True)
@@ -186,20 +184,7 @@ def main(cp_file: str, de_file: str):
 
 
 if __name__ == '__main__':
-    priors_file = '../data/causal-priors.txt'
-    diff_file = '../data/differential-exp.tsv'  # For 50,000 iterations it takes 14 seconds.
-    # It has 415 ranks
-    # diff_file = '../data/rslp_vs_lum.tsv' # For 50,000 iterations it takes 28 seconds.
-    # It has 1187 ranks
-    # diff_file = '../data/basal_vs_lum.tsv' # For 50,000 iterations it takes 14 seconds.
-    # It has 460 ranks
+    priors_file = '../../data/causal-priors.txt'
+    diff_file = '../../data/differential-exp.tsv'
 
-    times_takes = []
-    for i in range(0, 10):
-        start = timer()
-        main(priors_file, diff_file)
-        end = timer()
-        times_takes.append(end - start)
-
-    print(times_takes)
-    print("Average Time: ", np.mean(times_takes))
+    main(priors_file, diff_file)
