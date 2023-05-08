@@ -3,6 +3,7 @@ from timeit import default_timer as timer
 
 import numpy as np
 import pandas as pd
+from statsmodels.stats.multitest import fdrcorrection
 
 
 def main(cp_file: str, de_file: str, iters: int):
@@ -10,7 +11,6 @@ def main(cp_file: str, de_file: str, iters: int):
     :param cp_file: File path of causal-priors file
     :param de_file: File path of differential-exp file
     :param iters: Number of iterations
-    :return:
     """
     if cp_file is None or de_file is None:
         print('Please provide causal-priors and differential-exp file path')
@@ -121,6 +121,10 @@ def main(cp_file: str, de_file: str, iters: int):
         # Calculate the p-value
         output_df['pValue'] = output_df['rankLessThanActual'] / iters
 
+        # Calculate the fdrcorrected p-value and store it in a new column
+        output_df['fdrCorrectedPValue'] = \
+            fdrcorrection(output_df['pValue'], alpha=0.05, method='indep', is_sorted=False)[1]
+
         # Save the output dataframe to a file
         output_df.to_csv('../output/analysis_output.tsv', sep='\t', index=False)
 
@@ -142,7 +146,7 @@ if __name__ == '__main__':
     # diff_file = '../data/rslp_vs_lum.tsv'
 
     start = timer()
-    main(priors_file, diff_file, iters=50_000)
+    main(priors_file, diff_file, iters=200_000)
     end = timer()
     print("Time taken: ", end - start)
 
