@@ -2,6 +2,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+from timeit import default_timer as timer
 
 
 def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
@@ -43,6 +44,10 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Choose minimum between actual_rank_sum and actual_negative_rank_sum as actual_min_rank_sum
     target_counts_df['actual_min_rank_sum'] = target_counts_df.apply(
         lambda x: min(x['actual_rank_sum'], x['actual_negative_rank_sum']), axis=1)
+    # Find which one is minimum and store it in IsPosNeg column
+    target_counts_df['IsPosNeg'] = target_counts_df.apply(
+        lambda x: 'Positive' if x['actual_rank_sum'] < x['actual_negative_rank_sum'] else 'Negative',
+        axis=1)
     # Drop actual_rank_sum and actual_negative_rank_sum columns from target_counts_df dataframe
     target_counts_df.drop(['actual_rank_sum', 'actual_negative_rank_sum'], axis=1, inplace=True)
 
@@ -67,8 +72,7 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     rand_iter = 1_000
 
     # Initialize the array to store results
-    max_r_sum = np.max(target_counts_df['actual_min_rank_sum']) + 1
-    results_array = np.zeros((len(up_down_tuple_list), max_r_sum))
+    results_array = np.zeros((len(up_down_tuple_list), rand_iter))
 
     for i in range(rand_iter):
         # Pick max_targets random numbers from 0 to max_rank+1
@@ -77,17 +81,20 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
         # Create reverse randomly_drawn_list from rank_df dataframe
         reverse_randomly_drawn_list = max_rank - randomly_drawn_list
 
-        for j in range(len(up_down_tuple_list)):
-            tup = up_down_tuple_list[j]
-            r_sum = min(
-                sum(randomly_drawn_list[:tup[0]]) + sum(reverse_randomly_drawn_list[tup[0]:tup[0] + tup[1]]),
-                sum(reverse_randomly_drawn_list[:tup[0]]) + sum(randomly_drawn_list[tup[0]:tup[0] + tup[1]])
-            )
-            if r_sum < max_r_sum:
-                results_array[j, r_sum] += 1
+        min_df = np.array(
+            [
+                min(
+                    sum(randomly_drawn_list[:x[0]]) + sum(reverse_randomly_drawn_list[x[0]:x[0] + x[1]]),
+                    # np.sum(np.concatenate((randomly_drawn_list[:x[0]], reverse_randomly_drawn_list[x[0]:x[0] + x[1]]))),
+                    sum(reverse_randomly_drawn_list[:x[0]]) + sum(randomly_drawn_list[x[0]:x[0] + x[1]])
+                    # np.sum(np.concatenate((reverse_randomly_drawn_list[:x[0]], randomly_drawn_list[x[0]:x[0] + x[1]])))
+                )
+                for x in up_down_tuple_list
+            ]
+        )
 
         # Store the result in the results_array
-        # results_array[:, i] = min_df
+        results_array[:, i] = min_df
 
     # Concatenate updown_df and df and store it in updown_df
     updown_df = pd.concat([updown_df, pd.DataFrame(results_array)], axis=1)
@@ -179,50 +186,20 @@ def main(cp_file: str, de_file: str):
 
 
 if __name__ == '__main__':
-    priors_file = '../data/causal-priors.txt'
-    diff_file = '../data/differential-exp.tsv'
-    main(priors_file, diff_file)
+    priors_file = '../../data/causal-priors.txt'
+    diff_file = '../../data/differential-exp.tsv'  # For 50,000 iterations it takes 14 seconds.
+    # It has 415 ranks
+    # diff_file = '../data/rslp_vs_lum.tsv' # For 50,000 iterations it takes 28 seconds.
+    # It has 1187 ranks
+    # diff_file = '../data/basal_vs_lum.tsv' # For 50,000 iterations it takes 14 seconds.
+    # It has 460 ranks
 
-    # times_takes = []
-    # for i in range(0, 10):
-    #     start = timer()
-    #     main(priors_file, diff_file)
-    #     end = timer()
-    #     times_takes.append(end - start)
-    #
-    # print(times_takes)
-    # print("Average Time: ", np.mean(times_takes))
+    times_takes = []
+    for i in range(0, 10):
+        start = timer()
+        main(priors_file, diff_file)
+        end = timer()
+        times_takes.append(end - start)
 
-
-
-
-# import numpy as np
-#
-# rand_iter = 1000
-# max_rank = 500
-# max_targets = 18
-# unique_total_count = np.unique(np.random.choice(max_rank + 1, max_targets, replace=False))
-# results_array = np.zeros((len(unique_total_count), rand_iter))
-#
-# drawn_matrix = np.random.choice(max_rank + 1, (rand_iter, max_targets), replace=False)
-# reverse_drawn_matrix = max_rank - drawn_matrix
-#
-# min_rank_sum_matrix = np.minimum(np.cumsum(drawn_matrix, axis=1), np.cumsum(reverse_drawn_matrix, axis=1))
-# results_array = min_rank_sum_matrix[:, unique_total_count - 1].T
-#
-#
-#
-#
-# rand_iter = 1000
-# max_rank = 500
-# max_targets = 18
-# unique_total_count = np.unique(np.random.choice(max_rank + 1, max_targets, replace=False)
-# results_array = np.zeros((len(unique_total_count), rand_iter))
-#
-# for i in range(rand_iter):
-# # Draw a random number from 0 to max_rank+1
-#     drawn_list = np.random.choice(max_rank + 1, max_targets, replace=False)
-#     reverse_drawn_list = max_rank - drawn_list
-#
-#     min_rank_sum = np.minimum(np.cumsum(drawn_list), np.cumsum(reverse_drawn_list))
-#     results_array[:, i] = [min_rank_sum[x - 1] for x in unique_total_count]
+    print(times_takes)
+    print("Average Time: ", np.mean(times_takes))
