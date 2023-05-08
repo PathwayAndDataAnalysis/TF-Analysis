@@ -2,6 +2,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+from timeit import default_timer as timer
 
 
 def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
@@ -43,14 +44,18 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Choose minimum between actual_rank_sum and actual_negative_rank_sum as actual_min_rank_sum
     target_counts_df['actual_min_rank_sum'] = target_counts_df.apply(
         lambda x: min(x['actual_rank_sum'], x['actual_negative_rank_sum']), axis=1)
+    # Find which one is minimum and store it in IsPosNeg column
+    target_counts_df['IsPosNeg'] = target_counts_df.apply(
+        lambda x: 'Positive' if x['actual_rank_sum'] < x['actual_negative_rank_sum'] else 'Negative',
+        axis=1)
     # Drop actual_rank_sum and actual_negative_rank_sum columns from target_counts_df dataframe
     target_counts_df.drop(['actual_rank_sum', 'actual_negative_rank_sum'], axis=1, inplace=True)
 
     # Remove the rows where length of count is less than 3
     target_counts_df = target_counts_df[target_counts_df['count'].apply(lambda x: len(x)) >= 3]
 
-    # Create a column named up_down_tuple in target_counts_df df, (x, y) x count of 1's and y count of -1's
-    target_counts_df['up_down_tuple'] = target_counts_df['count'].apply(lambda x: (x.count(1), x.count(-1)))
+    # Count the size of count column and store it in count_size column
+    target_counts_df['totalCount'] = target_counts_df['count'].apply(lambda x: len(x))
 
     # Find the max rank from rank_df dataframe
     max_rank = rank_df['rank'].max()
@@ -58,53 +63,33 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Add a new column in target_counts_df to store how many times the rank sum is less than the actual rank sum
     target_counts_df['rank_sum_less_than_actual'] = 0
 
-    # Find the unique values in up_down_tuple column and store it in a pandas dataframe
-    updown_df = pd.DataFrame(target_counts_df['up_down_tuple'].unique(), columns=['up_down_tuple'])
+    unique_total_count = target_counts_df['totalCount'].unique()
 
-    # Number of iterations
-    iters = 10
-
-    # Convert up_down_tuple into a NumPy array for faster operations
-    up_down_tuple_list = updown_df['up_down_tuple'].tolist()
+    rand_iter = 1_000
 
     # Initialize the array to store results
-    results_array = np.zeros((len(up_down_tuple_list), iters))
+    results_array = np.zeros((len(unique_total_count), rand_iter))
 
-    for i in range(iters):
-        # Pick max_targets random numbers from 0 to max_rank+1
-        randomly_drawn_list = np.random.randint(low=0, high=max_rank + 1, size=max_targets)
-        reverse_randomly_drawn_list = max_rank - randomly_drawn_list
+    # Check how many times this for loop takes to run
+    loop_start = timer()
+    for i in range(rand_iter):
+        # Draw a random number from 0 to max_rank+1
+        drawn_list = np.random.choice(max_rank + 1, max_targets, replace=False)
+        reverse_drawn_list = max_rank - drawn_list
+        min_rank_sum = np.minimum(np.cumsum(drawn_list), np.cumsum(reverse_drawn_list))
+        results_array[:, i] = [min_rank_sum[x-1] for x in unique_total_count]
 
-        # Precompute cumulative sums
-        random_cumsum = np.cumsum(randomly_drawn_list)
-        reverse_random_cumsum = np.cumsum(reverse_randomly_drawn_list)
+    loop_end = timer()
+    print(f'Loop took {loop_end - loop_start} seconds')  # took 28.592077041015727 seconds
 
-        # Calculate the sums using list comprehensions and NumPy operations
-        df = np.array([random_cumsum[x[0] - 1] + reverse_random_cumsum[x[0] + x[1] - 1]
-                       - reverse_random_cumsum[x[0] - 1] for x in up_down_tuple_list])
-        rev_df = np.array([reverse_random_cumsum[x[0] - 1] + random_cumsum[x[0] + x[1] - 1]
-                           - random_cumsum[x[0] - 1] for x in up_down_tuple_list])
+    # Merge all columns of results_array into a list of values
+    results_array = pd.DataFrame(results_array).apply(lambda x: x.values.tolist(), axis=1)
+    df_result = pd.concat([pd.DataFrame(unique_total_count), results_array], axis=1)
+    df_result.columns = ['totalCount', 'rank_sum_list']
 
-        # Find the minimum between df and rev_df
-        min_df = np.minimum(df, rev_df)
-
-        # Store the result in the results_array
-        results_array[:, i] = min_df
-
-    # Convert the results_array to a DataFrame
-    results = pd.DataFrame(results_array)
-
-    # Merge the results DataFrame with updown_df
-    updown_df = pd.concat([updown_df, results], axis=1)
-
-    # New dataframe using up_down_tuple of updown_df and another column rank_sum_list which contains
-    # list of rank sums for each up_down_tuple
-    rank_sum_df = updown_df[['up_down_tuple']].copy()
-    rank_sum_df['rank_sum_list'] = updown_df.drop('up_down_tuple', axis=1).values.tolist()
-
-    # For up_down_tuple in target_counts_df, find the rank_sum_list from rank_sum_df and store it in a new column
-    target_counts_df['rank_sum_list'] = target_counts_df['up_down_tuple'].apply(
-        lambda x: rank_sum_df[rank_sum_df['up_down_tuple'] == x]['rank_sum_list'].values[0])
+    # Merge the rank_sum_list column with target_counts_df dataframe
+    target_counts_df['rank_sum_list'] = target_counts_df['totalCount'].apply(
+        lambda x: df_result[df_result['totalCount'] == x]['rank_sum_list'].values[0])
 
     # Count the numbers in rank_sum_list which are less than actual_min_rank_sum and store it in a new column
     target_counts_df['rank_sum_less_than_actual'] = target_counts_df.apply(
@@ -112,13 +97,13 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
 
     # Calculate the p-value
     target_counts_df['p-value'] = target_counts_df['rank_sum_less_than_actual'].apply(
-        lambda x: (x + 1) / iters if x == 0 else x / iters)
+        lambda x: (x + 1) / rand_iter if x == 0 else x / rand_iter)
 
     # Drop the columns which are not required
     target_counts_df.drop(['rank_sum_list'], axis=1, inplace=True)
 
     # Save the dataframe to a csv file
-    target_counts_df.to_csv('../output/output_file.csv', index=False)
+    target_counts_df.to_csv('../output/final_output_file.csv', index=False)
 
 
 def main(cp_file: str, de_file: str):
@@ -135,18 +120,12 @@ def main(cp_file: str, de_file: str):
         print('Please provide causal-priors and differential-exp file path as string')
         sys.exit(1)
 
-    # Try except block to handle file not found error
     try:
         cp = pd.read_csv(cp_file, sep='\t', header=None)
         cp.columns = ['Symbols', 'action', 'targetSymbol', 'reference', 'residual']
-
-        # remove all columns except upregulates-expression and downregulates-expression
-        cp = cp[cp['action'].isin(['upregulates-expression', 'downregulates-expression'])]
-        # reset index
-        cp = cp.reset_index(drop=True)
-
-        # delete reference and residual columns
         cp = cp.drop(['reference', 'residual'], axis=1)
+        cp = cp[cp['action'].isin(['upregulates-expression', 'downregulates-expression'])]
+        cp = cp.reset_index(drop=True)
 
         de = pd.read_csv(de_file, sep='\t')
 
@@ -184,7 +163,10 @@ def main(cp_file: str, de_file: str):
 
 
 if __name__ == '__main__':
-    priors_file = '../data/causal-priors.txt'
-    diff_file = '../data/differential-exp.tsv'
+    priors_file = '../../data/causal-priors.txt'
+    diff_file = '../../data/differential-exp.tsv'
 
+    start = timer()
     main(priors_file, diff_file)
+    end = timer()
+    print("Time taken: ", end - start)

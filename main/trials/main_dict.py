@@ -1,5 +1,5 @@
-import random
 import sys
+
 import numpy as np
 import pandas as pd
 
@@ -58,44 +58,58 @@ def get_rank_sum(network: pd.DataFrame, rank_df: pd.DataFrame):
     # Add a new column in target_counts_df to store how many times the rank sum is less than the actual rank sum
     target_counts_df['rank_sum_less_than_actual'] = 0
 
-    rand_iter = 100
+    # Find the unique values in up_down_tuple column and store it in a pandas dataframe
+    updown_df = pd.DataFrame(target_counts_df['up_down_tuple'].unique(), columns=['up_down_tuple'])
+
+    # Convert up_down_tuple into a NumPy array for faster operations
+    up_down_tuple_list = updown_df['up_down_tuple'].tolist()
+
+    rand_iter = 100_000
+
+    # Initialize the array to store results
+    results_array = np.zeros((len(up_down_tuple_list), rand_iter))
+
     for i in range(rand_iter):
         # Pick max_targets random numbers from 0 to max_rank+1
-        randomly_drawn_list = np.random.randint(0, max_rank + 1, max_targets)
+        randomly_drawn_list = np.random.randint(low=0, high=max_rank + 1, size=max_targets)
 
         # Create reverse randomly_drawn_list from rank_df dataframe
         reverse_randomly_drawn_list = max_rank - randomly_drawn_list
 
-        # up_down_tuple is in the form of (x, y) where x is the number of 1's and y is the number of -1's
-        # Choose x random numbers from randomly_drawn_list and y random numbers from reverse_randomly_drawn_list
-        # and store it in a dataframe
-        target_counts_df['random_ranks'] = target_counts_df['up_down_tuple'].apply(
-            lambda x: random.sample(list(randomly_drawn_list), x[0]) + random.sample(list(reverse_randomly_drawn_list),
-                                                                                     x[1]))
+        # Create a new df
+        df = np.array([sum(randomly_drawn_list[:x[0]]) + sum(reverse_randomly_drawn_list[x[0]:x[0] + x[1]]) for x in up_down_tuple_list])
 
-        # Find reverse rank from random_ranks column and store it in a new column named negative_random_ranks
-        target_counts_df['negative_random_ranks'] = target_counts_df['random_ranks'].apply(
-            lambda x: max_rank - np.array(x))
+        # Create a new column reverse_rank in df and store reverse rank sum
+        rev_df = np.array([sum(reverse_randomly_drawn_list[:x[0]]) + sum(randomly_drawn_list[x[0]:x[0] + x[1]]) for x in up_down_tuple_list])
 
-        # Add values in random_ranks and store it in a new column named rank_sum
-        target_counts_df['rank_sum'] = target_counts_df['random_ranks'].apply(lambda x: sum(x))
-        target_counts_df['negative_rank_sum'] = target_counts_df['negative_random_ranks'].apply(lambda x: sum(x))
+        # Find the minimum between df and rev_df
+        min_df = np.minimum(df, rev_df)
 
-        # Count how many times the rank_sum is less than the actual_min_rank_sum
-        target_counts_df['rank_sum_less_than_actual'] += target_counts_df.apply(
-            lambda x: 1 if x['rank_sum'] < x['actual_min_rank_sum'] else 0, axis=1)
+        # Store the result in the results_array
+        results_array[:, i] = min_df
 
-    # Drop unnecessary columns from target_counts_df dataframe
-    target_counts_df.drop(['count', 'up_down_tuple', 'random_ranks', 'negative_random_ranks',
-                           'rank_sum', 'actual_min_rank_sum', 'negative_rank_sum'], axis=1, inplace=True)
+    # Concatenate updown_df and df and store it in updown_df
+    updown_df = pd.concat([updown_df, pd.DataFrame(results_array)], axis=1)
 
-    # Add column p-value by dividing rank_sum_less_than_actual by rand_iter
-    # if rank_sum_less_than_actual is less than zero, then add 1 to it and then divide it by rand_iter
+    # New dataframe using up_down_tuple of updown_df and another column rank_sum_list which contains
+    # list of rank sums for each up_down_tuple
+    rank_sum_df = updown_df[['up_down_tuple']].copy()
+    rank_sum_df['rank_sum_list'] = updown_df.drop('up_down_tuple', axis=1).values.tolist()
+
+    # For up_down_tuple in target_counts_df, find the rank_sum_list from rank_sum_df and store it in a new column
+    target_counts_df['rank_sum_list'] = target_counts_df['up_down_tuple'].apply(
+        lambda x: rank_sum_df[rank_sum_df['up_down_tuple'] == x]['rank_sum_list'].values[0])
+
+    # Count the numbers in rank_sum_list which are less than actual_min_rank_sum and store it in a new column
+    target_counts_df['rank_sum_less_than_actual'] = target_counts_df.apply(
+        lambda x: len([i for i in x['rank_sum_list'] if i < x['actual_min_rank_sum']]), axis=1)
+
+    # Calculate the p-value
     target_counts_df['p-value'] = target_counts_df['rank_sum_less_than_actual'].apply(
         lambda x: (x + 1) / rand_iter if x == 0 else x / rand_iter)
 
-    # Add another column is_min_enough by checking if auc is less than 0.15
-    target_counts_df['is_min_enough'] = target_counts_df['p-value'] < 0.15
+    # Drop the columns which are not required
+    target_counts_df.drop(['rank_sum_list'], axis=1, inplace=True)
 
     # Save the dataframe to a csv file
     target_counts_df.to_csv('../output/output_file.csv', index=False)
@@ -164,8 +178,7 @@ def main(cp_file: str, de_file: str):
 
 
 if __name__ == '__main__':
-    priors_file = '../data/causal-priors.txt'
-    diff_file = '../data/differential-exp.tsv'
-    # diff_file = '../data/rslp_vs_lum.tsv'
+    priors_file = '../../data/causal-priors.txt'
+    diff_file = '../../data/differential-exp.tsv'
 
     main(priors_file, diff_file)
