@@ -3,7 +3,7 @@ from timeit import default_timer as timer
 
 import numpy as np
 import pandas as pd
-from statsmodels.stats.multitest import fdrcorrection
+import statsmodels.stats.multitest as smm
 
 
 def main(cp_file: str, de_file: str, iters: int):
@@ -68,7 +68,7 @@ def main(cp_file: str, de_file: str, iters: int):
         rank_sum_df['negRS'] = rank_sum_df['negRSList'].apply(lambda x: np.sum(x))
         rank_sum_df['RS'] = np.where(rank_sum_df['posRS'] < rank_sum_df['negRS'], rank_sum_df['posRS'],
                                      rank_sum_df['negRS'])
-        rank_sum_df['whichRS'] = np.where(rank_sum_df['posRS'] < rank_sum_df['negRS'], 'posRS', 'negRS')
+        rank_sum_df['whichRS'] = np.where(rank_sum_df['posRS'] < rank_sum_df['negRS'], '+1', '-1')
         rank_sum_df['whichRSList'] = np.where(rank_sum_df['posRS'] < rank_sum_df['negRS'], rank_sum_df['posRSList'],
                                               rank_sum_df['negRSList'])
 
@@ -121,9 +121,8 @@ def main(cp_file: str, de_file: str, iters: int):
         # Calculate the p-value
         output_df['pValue'] = output_df['rankLessThanActual'] / iters
 
-        # Calculate the fdrcorrected p-value and store it in a new column
-        output_df['fdrCorrectedPValue'] = \
-            fdrcorrection(output_df['pValue'], alpha=0.05, method='indep', is_sorted=False)[1]
+        # Calculate the FDR Benjamini-Hochberg
+        reject, pvals_corrected, alphacSidak, alphacBonf = smm.multipletests(output_df['pValue'], alpha=0.05, method='fdr_bh')
 
         # Save the output dataframe to a file
         output_df.to_csv('../output/analysis_output.tsv', sep='\t', index=False)
@@ -146,7 +145,7 @@ if __name__ == '__main__':
     # diff_file = '../data/rslp_vs_lum.tsv'
 
     start = timer()
-    main(priors_file, diff_file, iters=200_000)
+    main(priors_file, diff_file, iters=50_000)
     end = timer()
     print("Time taken: ", end - start)
 
