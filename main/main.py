@@ -121,8 +121,12 @@ def main(cp_file: str, de_file: str, iters: int):
         # Calculate the p-value
         output_df['pValue'] = output_df['rankLessThanActual'] / iters
 
+        # Sort rows by pValue
+        output_df.sort_values(by=['pValue'], inplace=True)
+
         # Calculate the FDR Benjamini-Hochberg
         reject, pvals_corrected, alphacSidak, alphacBonf = smm.multipletests(output_df['pValue'], alpha=0.05, method='fdr_bh')
+        output_df['pValueCorrected'] = pvals_corrected
 
         # Save the output dataframe to a file
         output_df.to_csv('../output/analysis_output.tsv', sep='\t', index=False)
