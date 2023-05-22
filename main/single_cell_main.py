@@ -53,6 +53,10 @@ def main(cp_file: str, sde_file: str, iters: int):
 
         count = 0
 
+        # Numpy Array to store the pValues of each iteration
+        pValueArray = []
+        output_df = pd.DataFrame()
+
         # Each row is one differential expression
         for idx, row in sde_df.iterrows():
             cp_df = cpo_df.copy()
@@ -155,20 +159,33 @@ def main(cp_file: str, sde_file: str, iters: int):
             # Calculate the p-value
             output_df['pValue'] = output_df['rankLessThanActual'] / iters
 
+            # Append the pValue to pValueArray numpy array
+            pValueArray.append(output_df['pValue'].values.tolist())
+
             # Sort rows by pValue
-            output_df.sort_values(by=['pValue'], inplace=True)
+            # output_df.sort_values(by=['pValue'], inplace=True)
 
             # Calculate the FDR Benjamini-Hochberg
-            reject, pvals_corrected, _, _ = smm.multipletests(output_df['pValue'], alpha=0.05, method='fdr_bh')
-            output_df['pValueCorrected'] = pvals_corrected
+            # reject, pvals_corrected, _, _ = smm.multipletests(output_df['pValue'], alpha=0.05, method='fdr_bh')
+            # output_df['pValueCorrected'] = pvals_corrected
 
             # Save the output dataframe to a file
-            output_df.to_csv('../output/single_analysis_output_' + str(idx) + '.tsv', sep='\t', index=False)
+            # output_df.to_csv('../output/single_analysis_output_' + str(idx) + '.tsv', sep='\t', index=False)
 
             count += 1
-            print(f'Iteration {count} completed')
-            if count == 3:
-                break
+            print(f'Cell number {count}, cell id {idx} completed')
+            # if count == 3:
+            #     break
+
+        # Save the pValueArray numpy array
+        pValnpArray = np.array(pValueArray)
+        # Save the pValueArray numpy array to a tsv file
+        pVal_df = pd.DataFrame(pValnpArray)
+        pVal_df.columns = output_df['Symbols'].values.tolist()
+        pVal_df.insert(0, "CellID", sde_df.index.values.tolist(), True)
+
+        pVal_df.to_csv('../output/pValueArray.tsv', sep='\t', index=False)
+
 
     except FileNotFoundError:
         print('File not found: ')
