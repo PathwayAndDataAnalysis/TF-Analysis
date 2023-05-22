@@ -1,0 +1,8 @@
+We had two ways to implement random sum calculation
+
+
+
+For the sake for performance of this algorithm. Create a random rank-sum distribution by re-shuffling the ranks of the target genes many times.
+For efficiency, reuse a set of random ranks for each transcription factor. Select the first few random ranks (k ranks) from the recently re-shuffled ranks, where k represents the maximum possible number of target genes in the network.
+For each transcription factor with l target genes, take the first l random ranks from the k random ranks obtained earlier.
+Calculate the random rank-sum for each transcription factor by taking the minimum between the positive and negative random ranks.
