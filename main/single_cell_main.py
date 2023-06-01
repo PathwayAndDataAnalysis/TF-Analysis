@@ -3,13 +3,14 @@ from timeit import default_timer as timer
 
 import numpy as np
 import pandas as pd
+from scipy.stats import zscore
 import statsmodels.stats.multitest as smm
 
 
 def main(cp_file: str, sde_file: str, iters: int):
     """
     :param cp_file: File path of causal-priors file
-    :param de_file: File path of single cell differential expression file
+    :param sde_file:
     :param iters: Number of iterations
     """
     if cp_file is None or sde_file is None:
@@ -27,41 +28,30 @@ def main(cp_file: str, sde_file: str, iters: int):
         cpo_df = cpo_df[cpo_df['action'].isin(['upregulates-expression', 'downregulates-expression'])]
         cpo_df = cpo_df.reset_index(drop=True)
 
-        sde_df = pd.read_csv(sde_file, sep='\t', index_col=0)
-
-        # Find the columns which has comma separated values
-        comma_cols = sde_df.columns[sde_df.columns.str.contains(",")]
-
-        new_cols_df = pd.DataFrame()
-        for col in comma_cols:
-            col_sp = col.split(",")
-            new_cols = pd.concat([sde_df[col]] * len(col_sp), axis=1)
-            new_cols.columns = col_sp
-            new_cols_df = pd.concat([new_cols_df, new_cols], axis=1)
-
-        # Drop the columns which has comma in the name
-        sde_df.drop(comma_cols, axis=1, inplace=True)
-        sde_df = pd.concat([sde_df, new_cols_df], axis=1)
-
-        # Remove all the columns whose mean is 0 except the first column
-        sde_df = sde_df.loc[:, (sde_df != 0).any(axis=0)]
-        # Remove all the rows whose mean is 0
-        sde_df = sde_df.loc[(sde_df != 0).any(axis=1)]
+        sde_df = pd.read_csv(sde_file, sep='\t', header=0, index_col=0).T
 
         # Normalize the data using z-score
-        sde_df = sde_df.apply(lambda x: (x - np.mean(x)) / np.std(x), axis=0)
+        sde_df = sde_df.replace(0, np.nan)  # Replace 0 with NaN
+        sde_df = sde_df.apply(zscore, axis=0, nan_policy='omit')
 
         count = 0
 
         # Numpy Array to store the pValues of each iteration
         pValueArray = []
+
+        pValueDf = sde_df.copy()
+        pValueDf.iloc[:, :] = np.NaN
+        pValueDf.columns = pValueDf.columns.str.upper()
+
         output_df = pd.DataFrame()
 
         # Each row is one differential expression
         for idx, row in sde_df.iterrows():
             cp_df = cpo_df.copy()
             cell_de = pd.DataFrame()
-            cell_de['Symbols'] = sde_df.columns
+            # drop NaN
+            row = row.dropna()
+            cell_de['Symbols'] = row.index.str.upper()
             cell_de['SignedP'] = row.values
 
             # ----------------------------------------------------------------
@@ -111,8 +101,8 @@ def main(cp_file: str, sde_file: str, iters: int):
             # Create a new dataframe with key: Symbols and value: List of 1's and -1's
             output_df = cp_df.groupby('Symbols')['isUp'].apply(list).reset_index(name='upDownList')
             output_df['targetList'] = \
-            cp_df.groupby('Symbols')['targetSymbol'].apply(list).reset_index(name='targetList')[
-                'targetList']
+                cp_df.groupby('Symbols')['targetSymbol'].apply(list).reset_index(name='targetList')[
+                    'targetList']
             # Count the number of 1's and -1's in upDownList column and store it in a new column
             output_df['upDownCount'] = output_df['upDownList'].apply(lambda x: len(x))
             # Remove rows from output_df dataframe if upDownCount is less than 3
@@ -158,7 +148,14 @@ def main(cp_file: str, sde_file: str, iters: int):
 
             # Calculate the p-value
             output_df['pValue'] = output_df['rankLessThanActual'] / iters
+            output_df['SingedPValue'] = np.where(output_df['whichRS'] == '+1', output_df['pValue'],
+                                                 -1 * output_df['pValue'])
 
+# ----------------------------------------------------------------------------------------------------------------------
+            # Insert SignedPValue values into pValueDf based on Symbols
+            pValueDf.loc[pValueDf['Symbols'].isin(output_df['Symbols']), 'pValue'] = \
+                output_df[output_df['Symbols'].isin(pValueDf['Symbols'])]['SingedPValue'].values
+# ----------------------------------------------------------------------------------------------------------------------
             # Append the pValue to pValueArray numpy array
             pValueArray.append(output_df['pValue'].values.tolist())
 
@@ -174,8 +171,8 @@ def main(cp_file: str, sde_file: str, iters: int):
 
             count += 1
             print(f'Cell number {count}, cell id {idx} completed')
-            # if count == 3:
-            #     break
+            if count == 2:
+                break
 
         # Save the pValueArray numpy array
         pValnpArray = np.array(pValueArray)
@@ -199,7 +196,7 @@ def main(cp_file: str, sde_file: str, iters: int):
 
 if __name__ == '__main__':
     priors_file = '../data/causal-priors.txt'
-    single_cell_file = '../data/tf_scores_t.tsv'
+    single_cell_file = '../data/normalized_mat.tsv'
 
     start = timer()
     main(priors_file, single_cell_file, iters=10_000)
