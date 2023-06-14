@@ -183,7 +183,6 @@ def main(cp_file: str, sde_file: str, iters: int):
 
         pVal_df.to_csv('../output/pValueArray.tsv', sep='\t', index=False)
 
-
     except FileNotFoundError:
         print('File not found: ')
         sys.exit(1)
