@@ -4,7 +4,6 @@ from timeit import default_timer as timer
 import numpy as np
 import pandas as pd
 from scipy.stats import zscore
-import statsmodels.stats.multitest as smm
 
 
 def main(cp_file: str, sde_file: str, iters: int):
@@ -42,11 +41,12 @@ def main(cp_file: str, sde_file: str, iters: int):
         pValueDf = pd.DataFrame(columns=np.unique(cpo_df['Symbols']), index=sde_df.index)
 
         # Each row is one differential expression
+        count = 0
         for idx, row in sde_df.iterrows():
             cell_timer = timer()
             cp_df = cpo_df.copy()
             cell_de = pd.DataFrame()
-            # drop NaN
+
             row = row.dropna()
             cell_de['Symbols'] = row.index
             cell_de['SignedP'] = row.values
@@ -100,8 +100,7 @@ def main(cp_file: str, sde_file: str, iters: int):
             cp_df_grouped = cp_df_grouped[cp_df_grouped['upDownCount'] >= 3]
 
             # Find column RS, whichRS from rank_sum_df and merge it with output_df dataframe
-            cp_df_grouped = cp_df_grouped.merge(rank_sum_df[['Symbols', 'RS', 'whichRS']], on='Symbols',
-                                                how='left')
+            cp_df_grouped = cp_df_grouped.merge(rank_sum_df[['Symbols', 'RS', 'whichRS']], on='Symbols', how='left')
 
             # Find maximum number of targets for a Symbol
             max_target = np.max(cp_df_grouped['upDownCount'])
@@ -129,18 +128,18 @@ def main(cp_file: str, sde_file: str, iters: int):
             cp_df_grouped['RSList'] = cp_df_grouped['upDownCount'].apply(
                 lambda x: df_result[df_result['totalCount'] == x]['rank_sum_list'].values[0])
             cp_df_grouped['pValue'] = cp_df_grouped.apply(
-                lambda x: np.sum(x['RSList'] <= np.abs(x['RS'])) / (iters * np.sign(x['RS'])), axis=1
-            )
-            cp_df_grouped.drop(['RSList'], axis=1, inplace=True)
+                lambda x: np.sum(x['RSList'] <= np.abs(x['RS'])) / (iters * np.sign(x['RS'])), axis=1)
+            # Handle zero pValues
+            cp_df_grouped['pValue'] = np.where(cp_df_grouped['pValue'] == 0, 1 / iters, cp_df_grouped['pValue'])
 
             pValueDf.loc[idx, cp_df_grouped['Symbols']] = cp_df_grouped['pValue'].values
             print('Transcription factor count: ', len(cp_df_grouped['Symbols'].unique()))
-            print(f'Cell id {idx} completed and took {timer() - cell_timer} seconds \n')
+            print(f'Cell id {idx}, Cell count {count} completed and took {timer() - cell_timer} seconds \n')
+            count += 1
 
         # Remove columns which has all NaN values
         pValueDf = pValueDf.dropna(axis=1, how='all')
-        pValueDf = pValueDf.fillna(0)
-        pValueDf.to_csv('../output/pValueArraySlow.tsv', sep='\t', index=True)
+        pValueDf.to_csv('../output/pValSlw.tsv', sep='\t', index=True)
 
     except Exception as e:
         print('Exception: ', type(e), e.args, e)
@@ -153,6 +152,6 @@ if __name__ == '__main__':
     single_cell_file = '../data/normalized_mat.tsv'
 
     start = timer()
-    main(priors_file, single_cell_file, iters=10_000)
+    main(priors_file, single_cell_file, iters=100_000)
     end = timer()
     print("Time taken: ", end - start)

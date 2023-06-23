@@ -32,8 +32,8 @@ def main(cp_file: str, sde_file: str, iters: int):
         # Normalize the data using z-score
         sde_df.replace(0, np.nan, inplace=True)
         # Drop rows and column for some threshold
-        sde_df.dropna(axis=0, thresh=(len(sde_df.columns) / 14), inplace=True)
-        sde_df.dropna(axis=1, thresh=(len(sde_df.index) / 26), inplace=True)
+        sde_df.dropna(axis=0, thresh=(len(sde_df.columns) / 10), inplace=True)
+        sde_df.dropna(axis=1, thresh=(len(sde_df.index) / 18), inplace=True)
         sde_df.fillna(0, inplace=True)
         print('sde_df shape: ', sde_df.shape)
         sde_df.columns = sde_df.columns.str.upper()  # Convert column names to upper case
@@ -89,17 +89,6 @@ def main(cp_file: str, sde_file: str, iters: int):
             rs_cp_df.drop('Symbols_y', axis=1, inplace=True)
             rs_cp_df.rename(columns={'Symbols_x': 'Symbols'}, inplace=True)
 
-            # Calculate actual rank sum
-            # rsdf = rs_cp_df.groupby('Symbols').apply(
-            #     lambda x: np.sum(
-            #         np.concatenate((x[x['isUp'] == 1]['rank'], x[x['isUp'] == -1]['revRank'])))).reset_index(
-            #     name='posRSSum')
-            #
-            # rsdf['negRSSum'] = rs_cp_df.groupby('Symbols').apply(
-            #     lambda x: np.sum(
-            #         np.concatenate((x[x['isUp'] == 1]['revRank'], x[x['isUp'] == -1]['rank'])))).reset_index(
-            #     name='negRSSum')['negRSSum']
-
             # Calculate the positive rank sum
             pos_rank_sum = np.where(rs_cp_df['isUp'] == 1, rs_cp_df['rank'], rs_cp_df['revRank'])
             pos_sum_df = rs_cp_df.groupby('Symbols')[['Symbols', 'isUp']].apply(
@@ -111,7 +100,7 @@ def main(cp_file: str, sde_file: str, iters: int):
             # Merge the positive and negative rank sums
             rsdf = pos_sum_df.merge(neg_sum_df, on='Symbols')
 
-            # Choose value between column posRS and negRS and also find column chosen and store it in a new column
+            # Choose value between column posRSSum and negRSSum and also find column chosen and store it in a new column
             rsdf['RS'] = np.where(rsdf['posRSSum'] < rsdf['negRSSum'], rsdf['posRSSum'], rsdf['negRSSum'])
             rsdf['whichRS'] = np.where(rsdf['posRSSum'] < rsdf['negRSSum'], '+1', '-1')
             rsdf.drop(['posRSSum', 'negRSSum'], axis=1, inplace=True)
@@ -125,15 +114,17 @@ def main(cp_file: str, sde_file: str, iters: int):
                 lambda x: result[np.where(uniqueUpdown == x)[0][0], :]
             )
             cp_df_grouped_cell['pValue'] = cp_df_grouped_cell.apply(
-                lambda x: np.sum(x['rankSum'] <= np.abs(x['RS'])) / (iters * np.sign(x['RS'])), axis=1
-            )
+                lambda x: np.sum(x['rankSum'] <= np.abs(x['RS'])) / (iters * np.sign(x['RS'])), axis=1)
+            # Handle zero pValues
+            cp_df_grouped_cell['pValue'] = np.where(cp_df_grouped_cell['pValue'] == 0, 1 / iters,
+                                                    cp_df_grouped_cell['pValue'])
 
             pVals.append(cp_df_grouped_cell['pValue'].values.tolist())
             print(f'Cell {idx} time: ', timer() - cell_timer)
 
         pValueDf = pd.DataFrame(pVals, index=sde_df.index, columns=cp_df_grouped['Symbols'].values)
 
-        pValueDf.to_csv('../output/pValueArrayFst.tsv', sep='\t', index=True, header=True)
+        pValueDf.to_csv('../output/pValFst.tsv', sep='\t', index=True, header=True)
 
     except Exception as e:
         print('Exception: ', type(e), e.args, e)
@@ -146,6 +137,6 @@ if __name__ == '__main__':
     single_cell_file = '../data/normalized_mat.tsv'
 
     start = timer()
-    main(priors_file, single_cell_file, iters=500_000)
+    main(priors_file, single_cell_file, iters=100_000)
     end = timer()
     print("Total Time taken: ", end - start)
