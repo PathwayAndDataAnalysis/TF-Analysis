@@ -139,7 +139,7 @@ def main(cp_file: str, sde_file: str, iters: int):
 
         # Remove columns which has all NaN values
         pValueDf = pValueDf.dropna(axis=1, how='all')
-        pValueDf.to_csv('../output/pValSlw.tsv', sep='\t', index=True)
+        pValueDf.to_csv('../output/pValSlw5k.tsv', sep='\t', index=True)
 
     except Exception as e:
         print('Exception: ', type(e), e.args, e)
@@ -149,7 +149,7 @@ def main(cp_file: str, sde_file: str, iters: int):
 
 if __name__ == '__main__':
     priors_file = '../data/causal-priors.txt'
-    single_cell_file = '../data/normalized_mat.tsv'
+    single_cell_file = '../data/5knormalized_mat.tsv'
 
     start = timer()
     main(priors_file, single_cell_file, iters=100_000)
