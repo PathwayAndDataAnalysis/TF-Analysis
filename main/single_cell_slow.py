@@ -139,6 +139,7 @@ def main(cp_file: str, sde_file: str, iters: int):
 
         # Remove columns which has all NaN values
         pValueDf = pValueDf.dropna(axis=1, how='all')
+        pValueDf.fillna(0.0, inplace=True)
         pValueDf.to_csv('../output/pValSlw5k.tsv', sep='\t', index=True)
 
     except Exception as e:
