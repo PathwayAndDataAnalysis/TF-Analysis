@@ -49,14 +49,14 @@ def main(cp_file: str, sde_file: str, iters: int):
 
             row = row.dropna()
             cell_de['Symbols'] = row.index
-            cell_de['SignedP'] = row.values
+            cell_de['zscore'] = row.values
 
             # Create a new column named updown based on positive
-            # and negative values of SignedP column of de_df dataframe
-            cell_de['updown'] = np.where(cell_de['SignedP'] > 0, '1', '-1')
-            # Sort SignedP column in ascending order if updown column is 1
-            # and sort absolute values of SignedP column in ascending order if updown column is -1
-            cell_de.sort_values(by=['updown', 'SignedP'], ascending=[False, True], inplace=True)
+            # and negative values of zscore column of de_df dataframe
+            cell_de['updown'] = np.where(cell_de['zscore'] > 0, '1', '-1')
+            # Sort zscore column in ascending order if updown column is 1
+            # and sort absolute values of zscore column in ascending order if updown column is -1
+            cell_de.sort_values(by=['zscore'], ascending=[False], inplace=True)
             cell_de.reset_index(drop=True, inplace=True)
 
             # Remove rows of cp_df dataframe if targetSymbol is not present in Symbols column of rank_df dataframe
@@ -153,6 +153,6 @@ if __name__ == '__main__':
     single_cell_file = '../data/5knormalized_mat.tsv'
 
     start = timer()
-    main(priors_file, single_cell_file, iters=100_000)
+    main(priors_file, single_cell_file, iters=10_000)
     end = timer()
     print("Time taken: ", end - start)

@@ -74,10 +74,10 @@ def main(cp_file: str, sde_file: str, iters: int):
             cell_timer = timer()
             cell = pd.DataFrame()
             cell['Symbols'] = row.index
-            cell['SignedP'] = row.values
+            cell['zscore'] = row.values
 
-            cell['updown'] = np.where(cell['SignedP'] > 0, '1', '-1')
-            cell.sort_values(by=['updown', 'SignedP'], ascending=[False, True], inplace=True)
+            cell['updown'] = np.where(cell['zscore'] > 0, '1', '-1')
+            cell.sort_values(by=['zscore'], ascending=[False], inplace=True)
 
             cell['rank'] = np.arange(max_rank + 1)
             cell['revRank'] = max_rank - cell['rank']
