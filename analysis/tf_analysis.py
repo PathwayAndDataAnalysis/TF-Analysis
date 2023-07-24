@@ -117,71 +117,71 @@ def get_distribution(max_target: int, iters: int):
     return dist
 
 
-# def run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters):
-#     # Run the iterations for each cell
-#     result = pd.DataFrame(columns=cpo_grouped_df['symbol'].values, index=sc_df.index)
-#
-#     def cell_worker(row, idx):
-#         cell = pd.DataFrame({'symbol': row.index, 'zscore': row.values})
-#         # Remove rows of cell if zscore is nan
-#         cell.dropna(inplace=True)
-#         cell.reset_index(drop=True, inplace=True)
-#         cell.sort_values(by=['zscore'], ascending=[False], inplace=True)
-#         cell.reset_index(drop=True, inplace=True)
-#
-#         cell['acti_rank'] = cell.index
-#         cell['acti_rank'] = (cell['acti_rank'] + 0.5) / len(cell)
-#         cell['inhi_rank'] = 1 - cell['acti_rank']
-#
-#         cpo_df_c = cpo_df.copy()
-#         cpo_df_c = cpo_df_c[cpo_df_c['targetSymbol'].isin(cell['symbol'])]
-#         cpo_df_c.reset_index(drop=True, inplace=True)
-#
-#         cpo_df_c['pos_rs'] = cpo_df_c.apply(
-#             lambda x:
-#             cell.loc[cell['symbol'] == x['targetSymbol'], 'acti_rank'].values[0]
-#             if x['isUp'] == 1
-#             else
-#             cell.loc[cell['symbol'] == x['targetSymbol'], 'inhi_rank'].values[0],
-#             axis=1
-#         )
-#         cpo_df_c['neg_rs'] = 1 - cpo_df_c['pos_rs']
-#
-#         # Group
-#         cpo_df_c_grouped = cpo_df_c.groupby('symbol')['isUp'].apply(list).reset_index(name='upDownList')
-#         cpo_df_c_grouped['targetList'] = \
-#             cpo_df_c.groupby('symbol')['targetSymbol'].apply(list).reset_index(name='targetList')['targetList']
-#         cpo_df_c_grouped['upDownCount'] = cpo_df_c_grouped['upDownList'].apply(lambda x: len(x))
-#         cpo_df_c_grouped['pos_rs'] = cpo_df_c.groupby('symbol')['pos_rs'].apply(list).reset_index(name='pos_rs')[
-#             'pos_rs']
-#         cpo_df_c_grouped['neg_rs'] = cpo_df_c.groupby('symbol')['neg_rs'].apply(list).reset_index(name='neg_rs')[
-#             'neg_rs']
-#         cpo_df_c_grouped['rs'] = cpo_df_c_grouped.apply(
-#             lambda x: np.min([np.mean(x['pos_rs']), np.mean(x['neg_rs'])]), axis=1
-#         )
-#         cpo_df_c_grouped['rs'] = cpo_df_c_grouped.apply(
-#             lambda x: x['rs'] if np.mean(x['pos_rs']) > np.mean(x['neg_rs']) else -1 * x['rs'], axis=1
-#         )
-#
-#         # Counting how many times the RS is less than the random distribution
-#         for idx1, row1 in cpo_df_c_grouped.iterrows():
-#             arr = distribution[row1['upDownCount'] - 1]
-#             rs_count = np.searchsorted(arr, row1['rs'])
-#             if rs_count == 0:
-#                 rs_count = rs_count + 1
-#             if np.sign(row1['rs']) == -1:
-#                 rs_count = -1 * rs_count
-#             cpo_df_c_grouped.loc[idx1, 'count'] = rs_count
-#             cpo_df_c_grouped.loc[idx1, 'p-value'] = rs_count / iters
-#
-#         result.loc[idx, cpo_df_c_grouped['symbol']] = cpo_df_c_grouped['p-value'].values
-#         return result.loc[idx].values
-#
-#     parallel = Parallel(n_jobs=-1, verbose=10, backend='multiprocessing')
-#     output = parallel(delayed(cell_worker)(row, idx) for idx, row in sc_df.iterrows())
-#     output = pd.DataFrame(output, columns=cpo_grouped_df['symbol'].values, index=sc_df.index)
-#     output.dropna(axis=1, how='all', inplace=True)
-#     return output
+def cell_worker(row, idx, cpo_df, distribution, iters, result):
+    cell = pd.DataFrame({'symbol': row.index, 'zscore': row.values})
+    # Remove rows of cell if zscore is nan
+    cell.dropna(inplace=True)
+    cell.reset_index(drop=True, inplace=True)
+    cell.sort_values(by=['zscore'], ascending=[False], inplace=True)
+    cell.reset_index(drop=True, inplace=True)
+
+    cell['acti_rank'] = cell.index
+    cell['acti_rank'] = (cell['acti_rank'] + 0.5) / len(cell)
+    cell['inhi_rank'] = 1 - cell['acti_rank']
+
+    cpo_df_c = cpo_df.copy()
+    cpo_df_c = cpo_df_c[cpo_df_c['targetSymbol'].isin(cell['symbol'])]
+    cpo_df_c.reset_index(drop=True, inplace=True)
+
+    cpo_df_c['pos_rs'] = cpo_df_c.apply(
+        lambda x:
+        cell.loc[cell['symbol'] == x['targetSymbol'], 'acti_rank'].values[0]
+        if x['isUp'] == 1
+        else
+        cell.loc[cell['symbol'] == x['targetSymbol'], 'inhi_rank'].values[0],
+        axis=1
+    )
+    cpo_df_c['neg_rs'] = 1 - cpo_df_c['pos_rs']
+
+    # Group
+    cpo_df_c_grouped = cpo_df_c.groupby('symbol')['isUp'].apply(list).reset_index(name='upDownList')
+    cpo_df_c_grouped['targetList'] = \
+        cpo_df_c.groupby('symbol')['targetSymbol'].apply(list).reset_index(name='targetList')['targetList']
+    cpo_df_c_grouped['upDownCount'] = cpo_df_c_grouped['upDownList'].apply(lambda x: len(x))
+    cpo_df_c_grouped['pos_rs'] = cpo_df_c.groupby('symbol')['pos_rs'].apply(list).reset_index(name='pos_rs')[
+        'pos_rs']
+    cpo_df_c_grouped['neg_rs'] = cpo_df_c.groupby('symbol')['neg_rs'].apply(list).reset_index(name='neg_rs')[
+        'neg_rs']
+    cpo_df_c_grouped['rs'] = cpo_df_c_grouped.apply(
+        lambda x: np.min([np.mean(x['pos_rs']), np.mean(x['neg_rs'])]), axis=1
+    )
+    cpo_df_c_grouped['rs'] = cpo_df_c_grouped.apply(
+        lambda x: x['rs'] if np.mean(x['pos_rs']) > np.mean(x['neg_rs']) else -1 * x['rs'], axis=1
+    )
+
+    # Counting how many times the RS is less than the random distribution
+    for idx1, row1 in cpo_df_c_grouped.iterrows():
+        arr = distribution[row1['upDownCount'] - 1]
+        rs_count = np.searchsorted(arr, row1['rs'])
+        if rs_count == 0:
+            rs_count = rs_count + 1
+        if np.sign(row1['rs']) == -1:
+            rs_count = -1 * rs_count
+        cpo_df_c_grouped.loc[idx1, 'count'] = rs_count
+        cpo_df_c_grouped.loc[idx1, 'p-value'] = rs_count / iters
+
+    result.loc[idx, cpo_df_c_grouped['symbol']] = cpo_df_c_grouped['p-value'].values
+    return result.loc[idx].values
+
+
+def run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters):
+    temp = pd.DataFrame(columns=cpo_grouped_df['symbol'].values, index=sc_df.index)
+    parallel = Parallel(n_jobs=-1, verbose=10, backend='multiprocessing')
+    output = parallel(
+        delayed(cell_worker)(row, idx, cpo_df, distribution, iters, temp) for idx, row in sc_df.iterrows())
+    output = pd.DataFrame(output, columns=cpo_grouped_df['symbol'].values, index=sc_df.index)
+    output.dropna(axis=1, how='all', inplace=True)
+    return output
 
 
 def main(cp_file: str, sc_file: str, iters: int):
@@ -210,7 +210,8 @@ def main(cp_file: str, sc_file: str, iters: int):
     # Read or Generate the distribution
     distribution = get_distribution(max_target, iters)
 
-    # return run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters)
+    results = run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters)
+    return results
 
 
 if __name__ == "__main__":
@@ -245,5 +246,6 @@ if __name__ == "__main__":
 
     # Run the main function
     p_values = main(args.causal_priors_file, args.single_cell_file, args.iterations)
-    # pValFile = "data/p-values_" + str(args.iterations) + ".tsv"
-    # p_values.to_csv(pValFile, sep='\t')
+    pValFile = "data/p-values_" + str(args.iterations) + ".tsv"
+    p_values.to_csv(pValFile, sep='\t')
+    print('p-values saved successfully.')
