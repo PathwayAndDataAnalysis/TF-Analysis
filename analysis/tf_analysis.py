@@ -7,15 +7,13 @@ import sys
 import requests
 from scipy.stats import zscore
 from joblib import Parallel, delayed
-from timeit import default_timer as timer
 
 
 def read_mouse_to_human_mapping_file():
     mth_file = 'data/mouse_to_human.tsv'
     if not os.path.isfile(mth_file):
         print('Mouse to human mapping file does not exist. Let\'s download it.\n')
-        # Download the file from "https://www.cs.umb.edu/~kisan/mpuse_to_human.tsv"
-        file_url = 'https://www.cs.umb.edu/~kisan/mouse_to_human.tsv'
+        file_url = 'https://www.cs.umb.edu/~kisan/data/mouse_to_human.tsv'
         response = requests.get(file_url)
 
         if response.status_code == 200:
@@ -76,7 +74,8 @@ def prepare_data(cp_file: str, sc_file: str):
         # Get the rows for each Mouse symbol from norm_sc and add to new dataframe
         sc_prepared = pd.DataFrame()
         for mouse_symbol in mouse_to_human['Mouse'].values:
-            sc_prepared = sc_prepared.append(norm_sc.loc[mouse_symbol])
+            # sc_prepared = sc_prepared.append(norm_sc.loc[mouse_symbol])  # Does not support old pandas version
+            sc_prepared = pd.concat([sc_prepared, norm_sc.loc[mouse_symbol].to_frame().T], axis=0)
         sc_prepared.index = mouse_to_human['Human'].values
 
         # Drop rows with all 0s
@@ -117,7 +116,7 @@ def get_distribution(max_target: int, iters: int):
     return dist
 
 
-def cell_worker(row, idx, cpo_df, distribution, iters, result):
+def cell_worker(idx, row, cpo_df, distribution, iters, temp):
     cell = pd.DataFrame({'symbol': row.index, 'zscore': row.values})
     # Remove rows of cell if zscore is nan
     cell.dropna(inplace=True)
@@ -170,16 +169,20 @@ def cell_worker(row, idx, cpo_df, distribution, iters, result):
         cpo_df_c_grouped.loc[idx1, 'count'] = rs_count
         cpo_df_c_grouped.loc[idx1, 'p-value'] = rs_count / iters
 
-    result.loc[idx, cpo_df_c_grouped['symbol']] = cpo_df_c_grouped['p-value'].values
-    return result.loc[idx].values
+    # get column symbol and p-value from cpo_df_c_grouped dataframe and create a new dataframe p_df
+    p_df = pd.DataFrame({'symbol': cpo_df_c_grouped['symbol'], 'p-value': cpo_df_c_grouped['p-value']})
+
+    temp_df = pd.DataFrame({'symbol': temp})
+    temp_df = pd.merge(temp_df, p_df, on='symbol', how='left')
+
+    return temp_df['p-value'].values
 
 
 def run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters):
-    temp = pd.DataFrame(columns=cpo_grouped_df['symbol'].values, index=sc_df.index)
+    tfs = cpo_grouped_df['symbol'].values
     parallel = Parallel(n_jobs=-1, verbose=10, backend='multiprocessing')
-    output = parallel(
-        delayed(cell_worker)(row, idx, cpo_df, distribution, iters, temp) for idx, row in sc_df.iterrows())
-    output = pd.DataFrame(output, columns=cpo_grouped_df['symbol'].values, index=sc_df.index)
+    output = parallel(delayed(cell_worker)(idx, row, cpo_df, distribution, iters, tfs) for idx, row in sc_df.iterrows())
+    output = pd.DataFrame(output, columns=tfs, index=sc_df.index)
     output.dropna(axis=1, how='all', inplace=True)
     return output
 
@@ -210,8 +213,8 @@ def main(cp_file: str, sc_file: str, iters: int):
     # Read or Generate the distribution
     distribution = get_distribution(max_target, iters)
 
-    results = run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters)
-    return results
+    return run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters)
+    # return results
 
 
 if __name__ == "__main__":
