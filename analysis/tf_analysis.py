@@ -27,7 +27,7 @@ def read_mouse_to_human_mapping_file():
     return pd.read_csv(mth_file, sep='\t')
 
 
-def prepare_data(cp_file: str, sc_file: str):
+def prepare_data(cp_file: str, sc_file: str, is_sim_data: int):
     prepared_sc_file = sc_file.split('.')[0] + '_prepared.tsv'
     prepared_cp_file = cp_file.split('.')[0] + '_prepared.tsv'
 
@@ -47,43 +47,51 @@ def prepare_data(cp_file: str, sc_file: str):
         # Read the single cell file
         norm_sc = pd.read_csv(sc_file, sep='\t', header=0, index_col=0)
 
-        # Read the mouse to human mapping file
-        mouse_to_human = read_mouse_to_human_mapping_file()
-        # Remove rows of mouse_to_human if not in norm_sc
-        mouse_to_human = mouse_to_human[mouse_to_human['Mouse'].isin(norm_sc.index)]
-        # breakdown mouse_to_human Human column into multiple rows if there are multiple human genes
-        mouse_to_human['Human'] = mouse_to_human['Human'].str.split(', ')
-        mouse_to_human = mouse_to_human.explode('Human')
-        # Remove [ and ] from mouse_to_human Human column
-        mouse_to_human['Human'] = mouse_to_human['Human'].str.replace('[', '').str.replace(']', '')
+        # If the data is not simulated
+        if is_sim_data == 0:
+            # Read the mouse to human mapping file
+            mouse_to_human = read_mouse_to_human_mapping_file()
+            # Remove rows of mouse_to_human if not in norm_sc
+            mouse_to_human = mouse_to_human[mouse_to_human['Mouse'].isin(norm_sc.index)]
+            # breakdown mouse_to_human Human column into multiple rows if there are multiple human genes
+            mouse_to_human['Human'] = mouse_to_human['Human'].str.split(', ')
+            mouse_to_human = mouse_to_human.explode('Human')
+            # Remove [ and ] from mouse_to_human Human column
+            mouse_to_human['Human'] = mouse_to_human['Human'].str.replace('[', '').str.replace(']', '')
 
-        # Add into array symbol and targetSymbol of priors column
-        priors_symbol = priors['symbol'].values
-        priors_targetSymbol = priors['targetSymbol'].values
+            # Add into array symbol and targetSymbol of priors column
+            priors_symbol = priors['symbol'].values
+            priors_targetSymbol = priors['targetSymbol'].values
 
-        # Merge priors_symbol and priors_targetSymbol into single array
-        priors_symbol = np.concatenate((priors_symbol, priors_targetSymbol), axis=0)
-        priors_symbol = np.unique(priors_symbol)
-        mouse_to_human = mouse_to_human[mouse_to_human['Human'].isin(priors_symbol)]
+            # Merge priors_symbol and priors_targetSymbol into single array
+            priors_symbol = np.concatenate((priors_symbol, priors_targetSymbol), axis=0)
+            priors_symbol = np.unique(priors_symbol)
+            mouse_to_human = mouse_to_human[mouse_to_human['Human'].isin(priors_symbol)]
 
-        # Remove one to multiple mappings from mouse_to_human
-        mouse_to_human = mouse_to_human[~mouse_to_human['Mouse'].duplicated(keep=False)]
-        # Remove multiple to one mapping from mouse_to_human
-        mouse_to_human = mouse_to_human[~mouse_to_human['Human'].duplicated(keep=False)]
+            # Remove one to multiple mappings from mouse_to_human
+            mouse_to_human = mouse_to_human[~mouse_to_human['Mouse'].duplicated(keep=False)]
+            # Remove multiple to one mapping from mouse_to_human
+            mouse_to_human = mouse_to_human[~mouse_to_human['Human'].duplicated(keep=False)]
 
-        # Get the rows for each Mouse symbol from norm_sc and add to new dataframe
-        sc_prepared = pd.DataFrame()
-        for mouse_symbol in mouse_to_human['Mouse'].values:
-            # sc_prepared = sc_prepared.append(norm_sc.loc[mouse_symbol])  # Does not support old pandas version
-            sc_prepared = pd.concat([sc_prepared, norm_sc.loc[mouse_symbol].to_frame().T], axis=0)
-        sc_prepared.index = mouse_to_human['Human'].values
+            # Get the rows for each Mouse symbol from norm_sc and add to new dataframe
+            sc_prepared = pd.DataFrame()
+            for mouse_symbol in mouse_to_human['Mouse'].values:
+                # sc_prepared = sc_prepared.append(norm_sc.loc[mouse_symbol])  # Does not support old pandas version
+                sc_prepared = pd.concat([sc_prepared, norm_sc.loc[mouse_symbol].to_frame().T], axis=0)
+            sc_prepared.index = mouse_to_human['Human'].values
 
-        # Drop rows with all 0s
-        sc_prepared = sc_prepared.loc[~(sc_prepared == 0).all(axis=1)]
+            # Drop rows with all 0s
+            sc_prepared = sc_prepared.loc[~(sc_prepared == 0).all(axis=1)]
 
-        # Export sc_prepared to tsv
-        sc_prepared.to_csv(prepared_sc_file, sep='\t')
-        print('Prepared files saved successfully.')
+            # Export sc_prepared to tsv
+            sc_prepared.to_csv(prepared_sc_file, sep='\t')
+            print('Prepared files saved successfully.')
+
+        # If the data is simulated
+        else:
+            # Export norm_sc to tsv
+            norm_sc.to_csv(prepared_sc_file, sep='\t')
+            print('Prepared files saved successfully.')
 
     return prepared_cp_file, prepared_sc_file
 
@@ -105,8 +113,8 @@ def get_distribution(max_target: int, iters: int):
         return np.load(dist_file)['distribution']
 
     print('Distribution file does not exist. Now we have to generate it.')
-    n = 10_000
-    ranks = [(i + 0.5) / n for i in range(1, n)]
+    n = 1_000
+    ranks = [(i + 0.5) / n for i in range(0, n)]
 
     dist = Parallel(n_jobs=-1, verbose=5, backend='multiprocessing')(
         delayed(distribution_worker)(itr, max_target, ranks) for itr in range(iters))
@@ -118,14 +126,14 @@ def get_distribution(max_target: int, iters: int):
 
 def cell_worker(idx, row, cpo_df, distribution, iters, temp):
     cell = pd.DataFrame({'symbol': row.index, 'zscore': row.values})
-    # Remove rows of cell if zscore is nan
     cell.dropna(inplace=True)
-    cell.reset_index(drop=True, inplace=True)
     cell.sort_values(by=['zscore'], ascending=[False], inplace=True)
     cell.reset_index(drop=True, inplace=True)
 
     cell['acti_rank'] = cell.index
     cell['acti_rank'] = (cell['acti_rank'] + 0.5) / len(cell)
+    # Shuffle acti_rank
+    # cell['acti_rank'] = np.random.choice(cell['acti_rank'], len(cell), replace=False)
     cell['inhi_rank'] = 1 - cell['acti_rank']
 
     cpo_df_c = cpo_df.copy()
@@ -161,9 +169,9 @@ def cell_worker(idx, row, cpo_df, distribution, iters, temp):
     # Counting how many times the RS is less than the random distribution
     for idx1, row1 in cpo_df_c_grouped.iterrows():
         arr = distribution[row1['upDownCount'] - 1]
-        rs_count = np.searchsorted(arr, row1['rs'])
+        rs_count = np.searchsorted(arr, np.abs(row1['rs']), side='right')
         if rs_count == 0:
-            rs_count = rs_count + 1
+            rs_count = 1
         if np.sign(row1['rs']) == -1:
             rs_count = -1 * rs_count
         cpo_df_c_grouped.loc[idx1, 'count'] = rs_count
@@ -187,8 +195,8 @@ def run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters):
     return output
 
 
-def main(cp_file: str, sc_file: str, iters: int):
-    prepared_cp_file, prepared_sc_file = prepare_data(cp_file, sc_file)
+def main(cp_file: str, sc_file: str, iters: int, is_sim_data: int):
+    prepared_cp_file, prepared_sc_file = prepare_data(cp_file, sc_file, is_sim_data)
     print(prepared_cp_file, prepared_sc_file, iters)
 
     # Read the prepared causal-priors file
@@ -214,7 +222,6 @@ def main(cp_file: str, sc_file: str, iters: int):
     distribution = get_distribution(max_target, iters)
 
     return run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters)
-    # return results
 
 
 if __name__ == "__main__":
@@ -223,6 +230,8 @@ if __name__ == "__main__":
     parser.add_argument('-cp', '--causal-priors-file', help='Causal-priors file path', required=True)
     parser.add_argument('-sc', '--single-cell-file', help='Single cell gene expression file path', required=True)
     parser.add_argument('-iters', '--iterations', help='Number of iterations', required=True)
+    # parser.add_argument('-o', '--output-file', help='Output file path', required=True)
+    parser.add_argument('-sim', '--simulated-data', help='Is this simulated data', required=False, default=0)
     args = parser.parse_args()
     print(args)
 
@@ -248,7 +257,8 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Run the main function
-    p_values = main(args.causal_priors_file, args.single_cell_file, args.iterations)
-    pValFile = "data/p-values_" + str(args.iterations) + ".tsv"
+    p_values = main(args.causal_priors_file, args.single_cell_file, args.iterations, args.simulated_data)
+    pValFile = "data/p-values_" + str(args.iterations) + "_v2_shuffle.tsv"
+    # pValFile = args.output_file
     p_values.to_csv(pValFile, sep='\t')
     print('p-values saved successfully.')
