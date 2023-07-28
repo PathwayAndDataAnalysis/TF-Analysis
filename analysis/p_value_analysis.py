@@ -4,9 +4,6 @@ import os
 import pandas as pd
 import numpy as np
 import sys
-import requests
-from scipy.stats import zscore
-from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 import statsmodels.stats.multitest as smm
 from matplotlib.backends.backend_pdf import PdfPages
@@ -34,8 +31,41 @@ def run_bh(p_value_file):
     return adjustedPVals, actRej
 
 
+def run_all_bh(p_value_file):
+    pval_df = pd.read_csv(p_value_file, sep='\t', index_col=0)
+
+    # Flatten all values in pval_df including nan values
+    pval = np.abs(pval_df).values.flatten()
+    pval_n = pval[~np.isnan(pval)]
+
+    # Run Benjamini-Hochberg procedure
+    reject, adj_pval = smm.fdrcorrection(pval_n, method='i', is_sorted=False, alpha=0.1)
+
+    # create series from pval
+    pval_series = pd.Series(np.zeros(pval_df.shape[0] * pval_df.shape[1]))
+    pval_series.replace(0, np.nan, inplace=True)
+    count = 0
+    for i in range(len(pval)):
+        if not np.isnan(pval[i]):
+            pval_series[i] = reject[count]
+            count += 1
+
+    # Can we do above in a better way? Now optimized for speed
+
+
+    # Reshape pval_series to a 2D array original shape and create dataframe
+    pval_series = pval_series.values.reshape(pval_df.shape)
+    reject_df = pd.DataFrame(index=pval_df.index, columns=pval_df.columns, data=pval_series)
+
+    # Reshape reject to a 2D array original shape
+    # reject_val = pval.reshape(pval_df.shape)
+    # reject_df = pd.DataFrame(index=pval_df.index, columns=pval_df.columns, data=pval_series.values)
+    return reject_df
+
+
 def main(umap_file, p_value_file, dest_file):
     adjP, acptRej = run_bh(p_value_file)
+    # acptRej = run_all_bh(p_value_file)
     umap_df = pd.read_csv(umap_file, sep='\t')
 
     figures = []

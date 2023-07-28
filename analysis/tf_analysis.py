@@ -113,7 +113,7 @@ def get_distribution(max_target: int, iters: int):
         return np.load(dist_file)['distribution']
 
     print('Distribution file does not exist. Now we have to generate it.')
-    n = 1_000
+    n = 10_000
     ranks = [(i + 0.5) / n for i in range(0, n)]
 
     dist = Parallel(n_jobs=-1, verbose=5, backend='multiprocessing')(
@@ -230,7 +230,7 @@ if __name__ == "__main__":
     parser.add_argument('-cp', '--causal-priors-file', help='Causal-priors file path', required=True)
     parser.add_argument('-sc', '--single-cell-file', help='Single cell gene expression file path', required=True)
     parser.add_argument('-iters', '--iterations', help='Number of iterations', required=True)
-    # parser.add_argument('-o', '--output-file', help='Output file path', required=True)
+    parser.add_argument('-o', '--output-file', help='Output file path', required=True)
     parser.add_argument('-sim', '--simulated-data', help='Is this simulated data', required=False, default=0)
     args = parser.parse_args()
     print(args)
@@ -258,7 +258,7 @@ if __name__ == "__main__":
 
     # Run the main function
     p_values = main(args.causal_priors_file, args.single_cell_file, args.iterations, args.simulated_data)
-    pValFile = "data/p-values_" + str(args.iterations) + "_v2_shuffle.tsv"
-    # pValFile = args.output_file
+    # pValFile = "data/p-values_" + str(args.iterations) + "real_data.tsv"
+    pValFile = args.output_file
     p_values.to_csv(pValFile, sep='\t')
     print('p-values saved successfully.')
