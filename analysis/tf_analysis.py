@@ -48,7 +48,7 @@ def prepare_data(cp_file: str, sc_file: str, is_sim_data: int):
         norm_sc = pd.read_csv(sc_file, sep='\t', header=0, index_col=0)
 
         # If the data is not simulated
-        if is_sim_data == 0:
+        if is_sim_data == '0' or is_sim_data == 0:
             # Read the mouse to human mapping file
             mouse_to_human = read_mouse_to_human_mapping_file()
             # Remove rows of mouse_to_human if not in norm_sc
@@ -196,6 +196,8 @@ def run_cell_worker(cpo_grouped_df, sc_df, cpo_df, distribution, iters):
 
 
 def main(cp_file: str, sc_file: str, iters: int, is_sim_data: int):
+    # Print type of cp_file, sc_file, iters, is_sim_data
+    print(type(cp_file), type(sc_file), type(iters), type(is_sim_data))
     prepared_cp_file, prepared_sc_file = prepare_data(cp_file, sc_file, is_sim_data)
     print(prepared_cp_file, prepared_sc_file, iters)
 
@@ -231,7 +233,10 @@ if __name__ == "__main__":
     parser.add_argument('-sc', '--single-cell-file', help='Single cell gene expression file path', required=True)
     parser.add_argument('-iters', '--iterations', help='Number of iterations', required=True)
     parser.add_argument('-o', '--output-file', help='Output file path', required=True)
-    parser.add_argument('-sim', '--simulated-data', help='Is this simulated data', required=False, default=0)
+    parser.add_argument('-sim', '--simulated-data',
+                        help='Is this simulated data, 0 for non-simulated data and 1 for simulated data',
+                        required=False, default=0,
+                        type=int)
     args = parser.parse_args()
     print(args)
 
