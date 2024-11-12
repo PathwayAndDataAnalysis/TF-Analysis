@@ -26,21 +26,36 @@ def get_sd(max_target: int, total_genes: int, iters: int):
     print("Distribution file does not exist. Now we have to generate it.")
 
     # n = total_genes  # Sampling size for random distribution
-    ranks = np.linspace(start=1, stop=total_genes, num=total_genes)
-    ranks = (ranks - 0.5) / total_genes
+    sd_dist = np.zeros((max_target, total_genes - max_target))
 
-    dist = Parallel(n_jobs=-1, verbose=5, backend="multiprocessing")(
-        delayed(distribution_worker)(max_target, ranks) for _ in range(iters)
-    )
-    sd_dist = np.std(np.array(dist).T, axis=1)
+    for i in range(total_genes - max_target):
+        new_n = max_target + i
+        ranks = np.linspace(start=1, stop=new_n, num=new_n)
+        ranks = (ranks - 0.5) / new_n
+
+        dist = Parallel(n_jobs=-1, verbose=5, backend="multiprocessing")(
+            delayed(distribution_worker)(max_target, ranks) for _ in range(iters)
+        )
+        sd_dist[:, i] = np.std(np.array(dist).T, axis=1)
     np.savez_compressed(file=sd_file, distribution=sd_dist)
     return sd_dist
 
+    # ranks = np.linspace(start=1, stop=total_genes, num=total_genes)
+    # ranks = (ranks - 0.5) / total_genes
+    #
+    # dist = Parallel(n_jobs=-1, verbose=5, backend="multiprocessing")(
+    #     delayed(distribution_worker)(max_target, ranks) for _ in range(iters)
+    # )
+    # sd_dist = np.std(np.array(dist).T, axis=1)
+    # np.savez_compressed(file=sd_file, distribution=sd_dist)
+    # return sd_dist
+
 
 def sample_worker(
-    sample: pd.DataFrame,
-    prior_network: pd.DataFrame,
-    sd: np.array,
+        sample: pd.DataFrame,
+        prior_network: pd.DataFrame,
+        sd: np.array,
+        max_target: int,
 ):
     sample.dropna(inplace=True)
     sample["rank"] = sample.rank(ascending=False)
@@ -82,9 +97,10 @@ def sample_worker(
     # Identify non-NaN indices for 'rs' to filter the relevant rows
     valid_indices = ~np.isnan(prior_network["rs"])
 
+    n_value = len(sample)
+
     z_vals = (np.abs(prior_network.loc[valid_indices, "rs"]) - 0.5) / sd[
-        prior_network.loc[valid_indices, "valid_target"].astype(int) - 1
-    ]
+        prior_network.loc[valid_indices, "valid_target"].astype(int) - 1, n_value - max_target]
     p_vals = 1 + erf(z_vals / np.sqrt(2))
 
     # Adjust sign based on 'rs' values
@@ -97,12 +113,12 @@ def sample_worker(
 
 
 def run_analysis(
-    tfs, gene_exp: pd.DataFrame, prior_network: pd.DataFrame, sd_dist: np.array
+        tfs, gene_exp: pd.DataFrame, prior_network: pd.DataFrame, sd_dist: np.array, max_target: int
 ) -> pd.DataFrame:
     gene_exp = gene_exp.T
     parallel = Parallel(n_jobs=-1, verbose=5, backend="multiprocessing")
     output = parallel(
-        delayed(sample_worker)(pd.DataFrame(row), prior_network, sd_dist)
+        delayed(sample_worker)(pd.DataFrame(row), prior_network, sd_dist, max_target)
         for idx, row in gene_exp.iterrows()
     )
     output = pd.DataFrame(output, columns=tfs, index=gene_exp.index)
@@ -116,8 +132,9 @@ def main(prior_network: pd.DataFrame, gene_exp: pd.DataFrame, iters: int):
     prior_network = prior_network.groupby("tf").agg({"action": list, "target": list})
     prior_network["updown"] = prior_network["target"].apply(lambda x: len(x))
 
+    max_target = np.max(prior_network["updown"])
     sd_dist = get_sd(
-        max_target=np.max(prior_network["updown"]),
+        max_target=max_target,
         total_genes=len(gene_exp),
         iters=iters,
     )
@@ -127,6 +144,7 @@ def main(prior_network: pd.DataFrame, gene_exp: pd.DataFrame, iters: int):
         gene_exp=gene_exp,
         prior_network=prior_network,
         sd_dist=sd_dist,
+        max_target=max_target,
     )
 
 
