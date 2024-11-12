@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 
 
 def read_mouse_to_human_mapping_file():
-    mth_file = 'data/mouse_to_human.tsv'
+    mth_file = 'realdata/data/mouse_to_human.tsv'
     if not os.path.isfile(mth_file):
         print('Mouse to human mapping file does not exist. Let\'s download it.\n')
         file_url = 'https://www.cs.umb.edu/~kisan/data/mouse_to_human.tsv'

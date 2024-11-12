@@ -22,7 +22,7 @@ The fundamental structure of this algorithm can be described as follows: initial
 git clone https://github.com/PathwayAndDataAnalysis/TF-Analysis.git
 cd TF-Analysis/main
 
-python tf_analysis.py -cp sim_data/simulated_network.tsv -sc dim_data/simulated_data.tsv -iters 100000 -o sim_data/result.tsv -sim 1
+python old_tf_analysis.py -cp simulated/simulated_priors.tsv -sc dim_data/simulated_data.tsv -iters 100000 -o simulated/result.tsv -sim 1
 
 ```
 
