@@ -9,10 +9,13 @@ from joblib import Parallel, delayed
 
 
 def distribution_worker(max_target: int, ranks: np.array):
-    arr = np.zeros(max_target)
+    # arr = np.zeros(max_target)
+    # cs = np.random.choice(ranks, max_target, replace=False).cumsum()
+    # for i in range(0, max_target):
+    #     arr[i] = cs[i] / (i + 1)
+    # return arr
     cs = np.random.choice(ranks, max_target, replace=False).cumsum()
-    for i in range(0, max_target):
-        arr[i] = cs[i] / (i + 1)
+    arr = cs / np.arange(1, max_target + 1)
     return arr
 
 
@@ -33,22 +36,12 @@ def get_sd(max_target: int, total_genes: int, iters: int):
         ranks = np.linspace(start=1, stop=new_n, num=new_n)
         ranks = (ranks - 0.5) / new_n
 
-        dist = Parallel(n_jobs=-1, verbose=5, backend="multiprocessing")(
+        dist = Parallel(n_jobs=-1, verbose=10, backend="multiprocessing")(
             delayed(distribution_worker)(max_target, ranks) for _ in range(iters)
         )
         sd_dist[:, i] = np.std(np.array(dist).T, axis=1)
     np.savez_compressed(file=sd_file, distribution=sd_dist)
     return sd_dist
-
-    # ranks = np.linspace(start=1, stop=total_genes, num=total_genes)
-    # ranks = (ranks - 0.5) / total_genes
-    #
-    # dist = Parallel(n_jobs=-1, verbose=5, backend="multiprocessing")(
-    #     delayed(distribution_worker)(max_target, ranks) for _ in range(iters)
-    # )
-    # sd_dist = np.std(np.array(dist).T, axis=1)
-    # np.savez_compressed(file=sd_file, distribution=sd_dist)
-    # return sd_dist
 
 
 def sample_worker(
@@ -67,13 +60,18 @@ def sample_worker(
         targets = tf_row["target"]
         actions = tf_row["action"]
 
+        # Valid target counts and total targets should be greater than 3
+        valid_targets = len([t for t in targets if t in sample.index])
+        if len(targets) < 3 or valid_targets < 3:
+            prior_network.loc[tf_id, "rs"] = np.nan
+            prior_network.loc[tf_id, "valid_target"] = np.nan
+            continue
+
         acti_rs = 0
         inhi_rs = 0
-        valid_targets = 0
 
         for i, action in enumerate(actions):
             if targets[i] in sample.index:
-                valid_targets += 1
                 if action == 1:
                     acti_rs += np.average(sample.loc[targets[i], "rank"])
                     inhi_rs += np.average(sample.loc[targets[i], "rev_rank"])
@@ -81,26 +79,18 @@ def sample_worker(
                     inhi_rs += np.average(sample.loc[targets[i], "rank"])
                     acti_rs += np.average(sample.loc[targets[i], "rev_rank"])
 
-        if acti_rs == 0 and inhi_rs == 0:  # No ranks for the all target genes
-            prior_network.loc[tf_id, "rs"] = np.nan
-            prior_network.loc[tf_id, "valid_target"] = np.nan
-        else:
-            if valid_targets >= 3:  # At least 3 valid target genes
-                rs = np.min([acti_rs, inhi_rs])
-                rs = rs / valid_targets  # Average rank-sum
-                prior_network.loc[tf_id, "rs"] = rs if acti_rs < inhi_rs else -1 * rs
-                prior_network.loc[tf_id, "valid_target"] = valid_targets
-            else:  # Less than 3 valid target genes
-                prior_network.loc[tf_id, "rs"] = np.nan
-                prior_network.loc[tf_id, "valid_target"] = np.nan
+        rs = np.min([acti_rs, inhi_rs])
+        rs = rs / valid_targets  # Average rank-sum
+        prior_network.loc[tf_id, "rs"] = rs if acti_rs < inhi_rs else -rs
+        prior_network.loc[tf_id, "valid_target"] = valid_targets
 
     # Identify non-NaN indices for 'rs' to filter the relevant rows
     valid_indices = ~np.isnan(prior_network["rs"])
 
-    n_value = len(sample)
-
-    z_vals = (np.abs(prior_network.loc[valid_indices, "rs"]) - 0.5) / sd[
-        prior_network.loc[valid_indices, "valid_target"].astype(int) - 1, n_value - max_target]
+    z_vals = ((np.abs(prior_network.loc[valid_indices, "rs"]) - 0.5) /
+              sd[prior_network.loc[valid_indices, "valid_target"].astype(int) - 1,
+                 len(sample) - max_target,
+              ])
     p_vals = 1 + erf(z_vals / np.sqrt(2))
 
     # Adjust sign based on 'rs' values
@@ -113,7 +103,11 @@ def sample_worker(
 
 
 def run_analysis(
-        tfs, gene_exp: pd.DataFrame, prior_network: pd.DataFrame, sd_dist: np.array, max_target: int
+        tfs,
+        gene_exp: pd.DataFrame,
+        prior_network: pd.DataFrame,
+        sd_dist: np.array,
+        max_target: int,
 ) -> pd.DataFrame:
     gene_exp = gene_exp.T
     parallel = Parallel(n_jobs=-1, verbose=5, backend="multiprocessing")
@@ -222,5 +216,5 @@ if __name__ == "__main__":
     p_values.dropna(axis=1, how="all", inplace=True)
 
     # pValFile = "data/pvalue_3valid_target_anal_sd.tsv"
-    pValFile = "data/pvalue_faster.tsv"
+    pValFile = "data/pvalue_faster_optimized.tsv"
     p_values.to_csv(pValFile, sep="\t")
